@@ -1,0 +1,40 @@
+{
+  "name": "ss-bg",
+  "version": "0.1.0",
+  "description": "コンパクトなパスワードマネージャー & スクリーンショットツール Chrome拡張",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:e2e": "pnpm build && playwright test",
+    "test:e2e:ui": "pnpm build && playwright test --ui"
+  },
+  "keywords": [
+    "chrome-extension",
+    "password-manager",
+    "screenshot",
+    "webauthn"
+  ],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.26.2",
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.3.0",
+    "@playwright/test": "^1.57.0",
+    "@types/chrome": "^0.1.33",
+    "@vitejs/plugin-vue": "^6.0.3",
+    "@vitest/coverage-v8": "^4.0.17",
+    "@vitest/ui": "^4.0.17",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.1.0",
+    "playwright": "^1.57.0",
+    "playwright-chromium": "^1.57.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17",
+    "vue": "^3.5.26"
+  }
+}

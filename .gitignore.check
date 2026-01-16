@@ -1,0 +1,32 @@
+# 無視されるべきディレクトリ・ファイルのチェック
+
+echo "=== .gitignore動作確認 ==="
+echo ""
+
+# 無視されるべきもの
+IGNORED_DIRS="node_modules dist tmp test-results playwright-report .chrome_cache coverage .vitest"
+IGNORED_FILES=".env .DS_Store *.log"
+
+echo "✅ 無視されているディレクトリ:"
+for dir in $IGNORED_DIRS; do
+  if [ -d "$dir" ]; then
+    if git check-ignore -q "$dir"; then
+      echo "  - $dir"
+    else
+      echo "  ❌ $dir は無視されていません！"
+    fi
+  fi
+done
+
+echo ""
+echo "✅ 追跡されるべきディレクトリ:"
+TRACKED_DIRS="src tests docs icons"
+for dir in $TRACKED_DIRS; do
+  if [ -d "$dir" ]; then
+    if ! git check-ignore -q "$dir"; then
+      echo "  - $dir"
+    else
+      echo "  ❌ $dir が無視されています！"
+    fi
+  fi
+done
