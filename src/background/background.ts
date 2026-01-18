@@ -145,8 +145,9 @@ export async function handleMessage(message: Message): Promise<Response> {
       case 'DELETE_PASSWORD':
         return await handleDeletePassword(message.payload);
       
-      case 'AUTOFILL_REQUEST':
-        return await handleAutofillRequest(message.payload);
+      case 'SHOW_PASSWORD_DIALOG_FOR_TAB':
+        // Popupからの要求でダイアログを表示
+        return await handleShowPasswordDialogForTab(message.payload);
       
       case 'LOCK_SESSION':
         return handleLockSession();
@@ -162,6 +163,9 @@ export async function handleMessage(message: Message): Promise<Response> {
       
       case 'UPDATE_SETTINGS':
         return await handleUpdateSettings(message.payload);
+      
+      case 'OPEN_OPTIONS_WITH_FORM_DATA':
+        return handleOpenOptionsWithFormData();
       
       default:
         return { success: false, error: 'Unknown message type' };
@@ -243,21 +247,32 @@ async function handleAuthenticate(): Promise<Response> {
  * パスワード取得
  */
 async function handleGetPasswords(): Promise<Response> {
+  console.log('[SS-BG] handleGetPasswords called, session valid:', isSessionValid(currentSession));
+  
   if (!isSessionValid(currentSession)) {
+    console.error('[SS-BG] Session is not valid in handleGetPasswords');
     return { success: false, error: 'Session expired. Please authenticate.' };
   }
   
   try {
+    console.log('[SS-BG] Getting encrypted passwords from storage...');
     const encryptedData = await storage.getEncryptedPasswords();
+    console.log('[SS-BG] Encrypted data:', encryptedData ? 'exists' : 'null');
+    
     if (!encryptedData) {
+      console.log('[SS-BG] No encrypted data, returning empty array');
       return { success: true, data: [] };
     }
     
+    console.log('[SS-BG] Decrypting passwords...');
     const decryptedJson = await decrypt(encryptedData, currentSession!.encryptionKey);
+    console.log('[SS-BG] Decryption successful, parsing JSON...');
     const passwords = JSON.parse(decryptedJson);
+    console.log('[SS-BG] Parsed', passwords.length, 'passwords');
     
     return { success: true, data: passwords };
   } catch (error) {
+    console.error('[SS-BG] Error in handleGetPasswords:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get passwords'
@@ -365,45 +380,42 @@ async function handleDeletePassword(payload: { id: string }): Promise<Response> 
 }
 
 /**
- * 自動入力リクエスト
+ * タブにパスワードダイアログを表示
  */
-async function handleAutofillRequest(payload: { url: string; tabId: number }): Promise<Response> {
+async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promise<Response> {
+  console.log('[SS-BG] handleShowPasswordDialogForTab called for tab', payload.tabId);
+  
   if (!isSessionValid(currentSession)) {
-    // 未認証の場合、Popupを開いて認証を促す
-    await chrome.action.openPopup();
-    return { success: false, error: 'Authentication required. Please authenticate in the popup.' };
+    console.error('[SS-BG] Session is not valid');
+    return { success: false, error: 'Session expired' };
   }
   
-  const passwordsResponse = await handleGetPasswords();
-  if (!passwordsResponse.success) {
-    return passwordsResponse;
-  }
-  
-  const passwords = passwordsResponse.data as PasswordEntry[];
-  const matches = matchUrls(payload.url, passwords);
-  
-  if (matches.length === 0) {
-    return { success: false, error: 'No matching passwords found for this URL' };
-  }
-  
-  // 候補が1つの場合は自動的に入力
-  if (matches.length === 1) {
+  try {
+    const passwordsResponse = await handleGetPasswords();
+    if (!passwordsResponse.success) {
+      return passwordsResponse;
+    }
+    const passwords = (passwordsResponse.data as PasswordEntry[]) || [];
+
+    console.log('[SS-BG] Sending SHOW_PASSWORD_DIALOG to tab', payload.tabId, 'with', passwords.length, 'passwords');
+    
     await chrome.tabs.sendMessage(payload.tabId, {
-      type: 'FILL_PASSWORD',
-      payload: matches[0]
+      type: 'SHOW_PASSWORD_DIALOG',
+      payload: {
+        candidates: passwords,
+        tabId: payload.tabId
+      }
     });
+    
+    console.log('[SS-BG] Message sent successfully to tab', payload.tabId);
     return { success: true };
+  } catch (error) {
+    console.error('[SS-BG] Error in handleShowPasswordDialogForTab:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to show password dialog'
+    };
   }
-  
-  // 複数候補がある場合は選択UIを表示
-  // chrome.storageに候補を保存してPopupで表示
-  await chrome.storage.session.set({
-    autofillCandidates: matches,
-    autofillTabId: payload.tabId
-  });
-  
-  await chrome.action.openPopup();
-  return { success: true, data: { needsSelection: true, count: matches.length } };
 }
 
 /**
@@ -485,6 +497,21 @@ async function handleUpdateSettings(payload: Partial<import('@/types/storage').A
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to update settings'
+    };
+  }
+}
+
+/**
+ * フォームデータ保存後にオプションページを開く
+ */
+function handleOpenOptionsWithFormData(): Response {
+  try {
+    chrome.runtime.openOptionsPage();
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to open options page'
     };
   }
 }

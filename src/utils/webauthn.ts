@@ -108,11 +108,16 @@ export async function authenticate(): Promise<{ key: CryptoKey; credentialId: Ar
   const settings = await storage.getSettings();
   const prfEnabled = settings.prfEnabled ?? false;
   
+  console.log('[WebAuthn] Authenticating with settings:', settings);
+  console.log('[WebAuthn] PRF enabled:', prfEnabled);
+  
   if (prfEnabled) {
     // PRF対応の場合
+    console.log('[WebAuthn] Using PRF-based authentication');
     return await authenticateWithPRF(credentialId);
   } else {
     // PRF未対応の場合、署名ベースで鍵を導出
+    console.log('[WebAuthn] Using signature-based authentication');
     return await authenticateWithSignature(credentialId);
   }
 }
@@ -180,18 +185,11 @@ async function authenticateWithSignature(credentialId: ArrayBuffer): Promise<{ k
     throw new Error('Authentication was cancelled');
   }
   
-  const response = assertion.response as AuthenticatorAssertionResponse;
-  
-  // 署名から鍵を導出
-  // 注意: 署名は決定論的ではないが、authenticatorDataとclientDataJSONを組み合わせることで
-  // ある程度の一貫性を持たせることができる
-  const authenticatorData = new Uint8Array(response.authenticatorData);
-  const clientDataJSON = new Uint8Array(response.clientDataJSON);
-  
-  // authenticatorDataとcredentialIdを組み合わせて鍵素材を作成
-  const keyMaterial = new Uint8Array(authenticatorData.length + credentialId.byteLength);
-  keyMaterial.set(authenticatorData, 0);
-  keyMaterial.set(new Uint8Array(credentialId), authenticatorData.length);
+  // credentialIdとAPP_SALTのみから決定論的にキーを導出
+  // これにより、同じCredentialを使えば常に同じキーが生成される
+  const keyMaterial = new Uint8Array(credentialId.byteLength + APP_SALT.byteLength);
+  keyMaterial.set(new Uint8Array(credentialId), 0);
+  keyMaterial.set(APP_SALT, credentialId.byteLength);
   
   const key = await deriveKeyFromMaterial(keyMaterial);
   

@@ -1,6 +1,7 @@
 import { handleMessage } from "./background";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[SS-BG Background] Message received:', message.type);
   handleMessage(message)
     .then(response => sendResponse(response))
     .catch(error => {
@@ -13,16 +14,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// コンテキストメニューの作成
-chrome.runtime.onInstalled.addListener(() => {
-  // 親メニュー
+// コンテキストメニューを作成（起動時に毎回実行）
+console.log('[SS-BG Background] Creating context menus');
+chrome.contextMenus.removeAll(() => {
   chrome.contextMenus.create({
     id: 'ss-bg-root',
     title: 'SS-BG パスワード管理',
     contexts: ['editable']
   });
   
-  // パスワードを入力
   chrome.contextMenus.create({
     id: 'autofill-password',
     parentId: 'ss-bg-root',
@@ -30,39 +30,92 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ['editable']
   });
   
-  // 現在のフォームを保存
   chrome.contextMenus.create({
     id: 'save-form',
     parentId: 'ss-bg-root',
     title: '現在のフォームを保存',
     contexts: ['editable']
   });
+  
+  console.log('[SS-BG Background] Context menus created');
 });
 
-// コンテキストメニューのクリックハンドラ
+// インストール時にも実行（念のため）
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('[SS-BG Background] Extension installed/updated');
+});
+
+// コンテキストメニューのクリックハンドラ（Service Worker起動時に常に登録）
+console.log('[SS-BG Background] Registering context menu click handler');
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (!tab?.id) return;
+  console.log('[SS-BG Background] Context menu clicked:', info.menuItemId);
+  
+  if (!tab?.id) {
+    console.log('[SS-BG Background] No tab ID');
+    return;
+  }
   
   if (info.menuItemId === 'autofill-password') {
-    // 全パスワードリストを取得してPopupで選択させる
-    const response = await handleMessage({ type: 'GET_PASSWORDS' });
+    console.log('[SS-BG] Autofill password clicked');
     
-    if (response.success && response.data) {
-      // Popupで選択させるために候補を保存
+    // セッション状態を確認
+    const sessionStatus = await handleMessage({ type: 'GET_SESSION_STATUS' });
+    console.log('[SS-BG] Session status:', sessionStatus);
+    
+    if (!sessionStatus.success || !sessionStatus.data?.authenticated) {
+      console.log('[SS-BG] Not authenticated, opening popup for auth');
+      
+      // タブIDを保存（認証後にダイアログ表示するため）
+      console.log('[SS-BG] Saving pendingAutofillTabId:', tab.id);
       await chrome.storage.session.set({
-        autofillCandidates: response.data,
-        autofillTabId: tab.id,
-        autofillMode: 'select-entry' // エントリ選択モード
+        pendingAutofillTabId: tab.id
       });
       
+      // 確認のため再取得
+      const check = await chrome.storage.session.get(['pendingAutofillTabId']);
+      console.log('[SS-BG] Verified pendingAutofillTabId saved:', check.pendingAutofillTabId);
+      
+      // 未認証の場合は認証を促す
       await chrome.action.openPopup();
-    } else {
-      console.error('Failed to get passwords:', response.error);
+      return;
     }
+    
+    // 認証済みの場合、パスワードリストを取得してダイアログを表示
+    await showPasswordDialog(tab.id);
   } else if (info.menuItemId === 'save-form') {
-    // フォーム保存メッセージを送信
+    console.log('[SS-BG] Save form clicked');
     await chrome.tabs.sendMessage(tab.id, {
       type: 'SAVE_CURRENT_FORM'
     });
   }
 });
+
+// パスワードダイアログを表示する共通関数
+async function showPasswordDialog(tabId: number) {
+  console.log('[SS-BG] Showing password dialog for tab', tabId);
+  
+  // 全パスワードリストを取得
+  const response = await handleMessage({ type: 'GET_PASSWORDS' });
+  
+  console.log('[SS-BG] GET_PASSWORDS response:', response);
+  
+  if (response.success && response.data) {
+    console.log('[SS-BG] Sending SHOW_PASSWORD_DIALOG to tab', tabId, 'with', response.data.length, 'passwords');
+    
+    try {
+      // Content Scriptにダイアログ表示を指示
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'SHOW_PASSWORD_DIALOG',
+        payload: {
+          candidates: response.data,
+          tabId: tabId
+        }
+      });
+      console.log('[SS-BG] Message sent successfully');
+    } catch (error) {
+      console.error('[SS-BG] Failed to send message to content script:', error);
+    }
+  } else {
+    console.error('[SS-BG] Failed to get passwords:', response.error);
+  }
+}

@@ -1,0 +1,3 @@
+[tasks.build-and-deploy]
+description = "Build and deploy the extension"
+run = "pnpm build && bash scripts/rsync.sh"

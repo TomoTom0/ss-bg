@@ -55,6 +55,14 @@
                   </button>
                 </div>
                 <p class="urls">URL: {{ entry.urls.join(', ') }}</p>
+                <div v-if="entry.additionalFields && entry.additionalFields.length > 0" class="additional-fields-info">
+                  <p class="additional-fields-label">追加フィールド:</p>
+                  <ul class="additional-fields-items">
+                    <li v-for="(field, index) in entry.additionalFields" :key="index">
+                      {{ field.name }}: {{ field.value }}
+                    </li>
+                  </ul>
+                </div>
               </div>
               <div class="password-actions">
                 <button @click="editEntry(entry)" class="btn btn-sm">編集</button>
@@ -88,6 +96,40 @@
           <div class="form-group">
             <label>URL（複数の場合は改行区切り）</label>
             <textarea v-model="formData.urlsText" rows="3"></textarea>
+          </div>
+          
+          <!-- 追加フィールド -->
+          <div class="form-group">
+            <label>追加フィールド</label>
+            <div v-if="formData.additionalFields.length === 0" class="empty-fields">
+              追加フィールドはありません
+            </div>
+            <div v-else class="additional-fields-list">
+              <div v-for="(field, index) in formData.additionalFields" :key="index" class="field-row">
+                <div class="field-inputs">
+                  <input 
+                    v-model="field.name" 
+                    type="text" 
+                    placeholder="フィールド名（例：電話番号）"
+                    class="field-name-input"
+                  />
+                  <input 
+                    v-model="field.value" 
+                    type="text" 
+                    placeholder="値"
+                    class="field-value-input"
+                  />
+                  <input 
+                    v-model="field.selector" 
+                    type="text" 
+                    placeholder="セレクタ（省略可）"
+                    class="field-selector-input"
+                  />
+                </div>
+                <button @click="removeAdditionalField(index)" class="btn-remove" title="削除">×</button>
+              </div>
+            </div>
+            <button @click="addAdditionalField" class="btn btn-sm btn-add-field">+ フィールドを追加</button>
           </div>
           
           <div class="form-actions">
@@ -172,12 +214,41 @@ const showAddForm = ref(false);
 const editingEntry = ref<PasswordEntry | null>(null);
 const deletingEntry = ref<PasswordEntry | null>(null);
 
-const formData = ref({
+const formData = ref<{
+  title: string;
+  username: string;
+  password: string;
+  urlsText: string;
+  additionalFields: Array<{ name: string; value: string; selector: string }>;
+}>({
   title: '',
   username: '',
   password: '',
-  urlsText: ''
+  urlsText: '',
+  additionalFields: []
 });
+
+// パスワード表示状態を管理
+const visiblePasswordIds = ref<Set<string>>(new Set());
+
+function togglePasswordVisibility(id: string): void {
+  if (visiblePasswordIds.value.has(id)) {
+    visiblePasswordIds.value.delete(id);
+  } else {
+    visiblePasswordIds.value.add(id);
+  }
+}
+
+function isPasswordVisible(id: string): boolean {
+  return visiblePasswordIds.value.has(id);
+}
+
+function getPasswordDisplay(id: string): string {
+  const entry = passwords.value.find(p => p.id === id);
+  if (!entry) return '';
+  
+  return isPasswordVisible(id) ? entry.password : '••••••••';
+}
 
 async function sendMessage(message: Message): Promise<Response> {
   return chrome.runtime.sendMessage(message);
@@ -277,22 +348,25 @@ async function clearAllData(): Promise<void> {
 }
 
 async function loadPasswords(): Promise<void> {
+  // 未認証の場合はパスワード読み込みをスキップ
+  if (!isAuthenticated.value) {
+    passwords.value = [];
+    return;
+  }
+  
   try {
     const response = await sendMessage({ type: 'GET_PASSWORDS' });
     if (response.success) {
       passwords.value = response.data || [];
     } else {
-      // 認証エラーの場合は空配列を設定してエラーを表示しない
-      if (response.error?.includes('Session expired') || response.error?.includes('authenticate')) {
-        passwords.value = [];
-      } else {
-        error.value = response.error || 'パスワード取得に失敗しました';
-      }
+      // 認証エラーまたは復号化エラーの場合は空配列を設定
+      passwords.value = [];
+      console.error('Failed to load passwords:', response.error);
+      // エラーを表示せず、ログに記録するのみ
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'エラーが発生しました';
-  } finally {
-    loading.value = false;
+    passwords.value = [];
+    console.error('Error loading passwords:', e);
   }
 }
 
@@ -313,7 +387,8 @@ function editEntry(entry: PasswordEntry): void {
     title: entry.title,
     username: entry.username,
     password: entry.password,
-    urlsText: entry.urls.join('\n')
+    urlsText: entry.urls.join('\n'),
+    additionalFields: entry.additionalFields ? [...entry.additionalFields] : []
   };
 }
 
@@ -325,8 +400,21 @@ function cancelEdit(): void {
     title: '',
     username: '',
     password: '',
-    urlsText: ''
+    urlsText: '',
+    additionalFields: []
   };
+}
+
+function addAdditionalField(): void {
+  formData.value.additionalFields.push({
+    name: '',
+    value: '',
+    selector: ''
+  });
+}
+
+function removeAdditionalField(index: number): void {
+  formData.value.additionalFields.splice(index, 1);
 }
 
 async function saveEntry(): Promise<void> {
@@ -354,7 +442,12 @@ async function saveEntry(): Promise<void> {
     password: formData.value.password,
     urls,
     createdAt: editingEntry.value?.createdAt || Date.now(),
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    usernameSelector: editingEntry.value?.usernameSelector,
+    passwordSelector: editingEntry.value?.passwordSelector,
+    additionalFields: formData.value.additionalFields.length > 0 
+      ? formData.value.additionalFields.filter(f => f.name && f.value)
+      : undefined
   };
   
   try {
@@ -422,8 +515,31 @@ async function saveSettings(): Promise<void> {
 
 onMounted(async () => {
   await checkSessionStatus();
-  await loadPasswords();
   await loadSettings();
+  // パスワード読み込みは認証済みの場合のみ
+  if (isAuthenticated.value) {
+    await loadPasswords();
+  }
+  
+  // フォームデータが保存されている場合は自動的にフォームを開く
+  const sessionData = await chrome.storage.session.get(['capturedFormData']);
+  if (sessionData.capturedFormData) {
+    const capturedData = sessionData.capturedFormData;
+    // セッションストレージからクリア
+    await chrome.storage.session.remove(['capturedFormData']);
+    
+    // フォームに反映
+    showAddForm.value = true;
+    formData.value = {
+      title: capturedData.title || '',
+      username: capturedData.username || '',
+      password: capturedData.password || '',
+      urlsText: capturedData.urls ? capturedData.urls.join('\n') : '',
+      additionalFields: capturedData.additionalFields || []
+    };
+  }
+  
+  loading.value = false;
 });
 </script>
 
@@ -698,5 +814,106 @@ h2 {
   display: flex;
   gap: 8px;
   margin-top: 16px;
+}
+
+.additional-fields-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.field-inputs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-name-input,
+.field-value-input,
+.field-selector-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.field-name-input {
+  font-weight: 600;
+}
+
+.field-selector-input {
+  font-size: 11px;
+  color: #666;
+  font-family: monospace;
+}
+
+.btn-remove {
+  padding: 6px 10px;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  height: fit-content;
+}
+
+.btn-remove:hover {
+  background: #da190b;
+}
+
+.btn-add-field {
+  width: 100%;
+  margin-top: 4px;
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.btn-add-field:hover {
+  background: #bbdefb;
+}
+
+.empty-fields {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.additional-fields-info {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+}
+
+.additional-fields-label {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  color: #666;
+  font-weight: 600;
+}
+
+.additional-fields-items {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: #666;
+}
+
+.additional-fields-items li {
+  margin: 2px 0;
 }
 </style>
