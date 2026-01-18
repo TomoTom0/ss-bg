@@ -391,26 +391,14 @@ async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promi
   }
   
   try {
-    // handleGetPasswords()を直接呼ぶ代わりに、currentSessionから直接取得
-    console.log('[SS-BG] Getting encrypted passwords from storage...');
-    const encryptedData = await storage.getEncryptedPasswords();
-    console.log('[SS-BG] Encrypted data:', encryptedData ? 'exists' : 'null');
-    
-    let passwords: PasswordEntry[] = [];
-    
-    if (encryptedData) {
-      console.log('[SS-BG] Decrypting passwords...');
-      const decryptedJson = await decrypt(encryptedData, currentSession!.encryptionKey);
-      console.log('[SS-BG] Decryption successful, parsing JSON...');
-      passwords = JSON.parse(decryptedJson);
-      console.log('[SS-BG] Parsed', passwords.length, 'passwords');
-    } else {
-      console.log('[SS-BG] No encrypted data, using empty array');
+    const passwordsResponse = await handleGetPasswords();
+    if (!passwordsResponse.success) {
+      return passwordsResponse;
     }
-    
+    const passwords = (passwordsResponse.data as PasswordEntry[]) || [];
+
     console.log('[SS-BG] Sending SHOW_PASSWORD_DIALOG to tab', payload.tabId, 'with', passwords.length, 'passwords');
     
-    // Content Scriptにダイアログ表示を指示
     await chrome.tabs.sendMessage(payload.tabId, {
       type: 'SHOW_PASSWORD_DIALOG',
       payload: {
