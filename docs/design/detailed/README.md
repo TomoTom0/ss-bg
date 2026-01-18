@@ -70,5 +70,6 @@
 - 04-ui-components.md: Vue.jsコンポーネント設計
 - 05-content-script.md: Content Script詳細設計
 - 06-messaging.md: メッセージングプロトコル
+- [additional-fields.md](./additional-fields.md): 追加フィールド機能の詳細設計
 
 アーキテクチャとデータモデルの詳細は調査・仕様決定を基に実装時に記述します。
