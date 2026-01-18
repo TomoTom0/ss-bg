@@ -105,8 +105,200 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   // Shadow DOMを作成してページのCSSから隔離
   dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
   
+  // CSSを注入
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `
+    .ss-bg-dialog-content {
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 8px;
+      max-width: 350px;
+      max-height: 300px;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      pointer-events: auto;
+    }
+    .ss-bg-empty-message {
+      color: #999;
+      text-align: center;
+      padding: 12px;
+      font-size: 13px;
+    }
+    .ss-bg-password-item {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 2px;
+      background: white;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      text-align: left;
+      font-size: 13px;
+    }
+    .ss-bg-password-item:hover {
+      background: #f0f0f0;
+    }
+    .ss-bg-item-title {
+      font-weight: 600;
+      margin-bottom: 2px;
+      color: #333;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ss-bg-item-username {
+      font-size: 12px;
+      color: #666;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ss-bg-cancel-btn {
+      width: 100%;
+      padding: 6px;
+      margin-top: 4px;
+      background: #f5f5f5;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #666;
+    }
+    .ss-bg-cancel-btn:hover {
+      background: #e0e0e0;
+    }
+    .ss-bg-field-button {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 2px;
+      background: white;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      text-align: left;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ss-bg-field-button:hover {
+      background: #f0f0f0;
+    }
+    .ss-bg-instruction {
+      margin: 0 0 8px 0;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: #666;
+      background: #f9f9f9;
+      border-radius: 2px;
+    }
+    .ss-bg-fields-container {
+      margin-bottom: 8px;
+    }
+    .ss-bg-field-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    .ss-bg-name-input {
+      flex: 1;
+      padding: 4px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      font-size: 12px;
+    }
+    .ss-bg-value-input {
+      flex: 2;
+      padding: 4px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      font-size: 12px;
+    }
+    .ss-bg-selector-input {
+      flex: 3;
+      padding: 4px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      font-size: 12px;
+    }
+    .ss-bg-remove-btn {
+      padding: 4px 8px;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .ss-bg-remove-btn:hover {
+      background: #d32f2f;
+    }
+    .ss-bg-save-btn {
+      width: 100%;
+      padding: 8px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .ss-bg-save-btn:hover {
+      background: #45a049;
+    }
+    .ss-bg-back-btn {
+      width: 100%;
+      padding: 8px;
+      margin-top: 4px;
+      background: #f5f5f5;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #666;
+    }
+    .ss-bg-back-btn:hover {
+      background: #e0e0e0;
+    }
+    .ss-bg-title-bar {
+      margin: 0 0 8px 0;
+      padding: 4px 8px;
+      border-bottom: 1px solid #eee;
+      cursor: move;
+      user-select: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .ss-bg-title-text {
+      font-weight: 600;
+      font-size: 13px;
+      color: #333;
+    }
+    .ss-bg-close-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: #999;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .ss-bg-close-btn:hover {
+      color: #333;
+    }
+  `;
+  dialogShadowRoot.appendChild(styleEl);
+  
   // ダイアログコンテンツを作成（入力欄の下に配置）
   dialogContent = document.createElement('div');
+  dialogContent.className = 'ss-bg-dialog-content';
+  dialogContent.style.top = `${rect.bottom + 5}px`;
+  dialogContent.style.left = `${rect.left}px`;
+  dialogContent.style.width = `${Math.max(rect.width, 250)}px`;
   dialogContent.style.cssText = `
     position: absolute;
     top: ${rect.bottom + 5}px;
@@ -131,63 +323,25 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   if (candidates.length === 0) {
     const empty = document.createElement('div');
     empty.textContent = '候補が見つかりません';
-    empty.style.cssText = `
-      color: #999;
-      text-align: center;
-      padding: 12px;
-      font-size: 13px;
-    `;
+    empty.className = 'ss-bg-empty-message';
     dialogContent.appendChild(empty);
   } else {
     candidates.forEach(entry => {
       const item = document.createElement('button');
-      item.style.cssText = `
-        display: block;
-        width: 100%;
-        padding: 8px;
-        margin-bottom: 2px;
-        background: white;
-        border: none;
-        border-radius: 2px;
-        cursor: pointer;
-        text-align: left;
-        font-size: 13px;
-      `;
-      
-      item.addEventListener('mouseenter', () => {
-        item.style.background = '#f0f0f0';
-      });
-      
-      item.addEventListener('mouseleave', () => {
-        item.style.background = 'white';
-      });
+      item.className = 'ss-bg-password-item';
       
       const itemTitle = document.createElement('div');
       itemTitle.textContent = entry.title;
-      itemTitle.style.cssText = `
-        font-weight: 600;
-        margin-bottom: 2px;
-        color: #333;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      `;
+      itemTitle.className = 'ss-bg-item-title';
       
       const itemUsername = document.createElement('div');
       itemUsername.textContent = entry.username;
-      itemUsername.style.cssText = `
-        font-size: 12px;
-        color: #666;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      `;
+      itemUsername.className = 'ss-bg-item-username';
       
       item.appendChild(itemTitle);
       item.appendChild(itemUsername);
       
       item.addEventListener('click', async () => {
-        // 2段階目：フィールド選択ダイアログを表示
         showFieldSelectionDialog(entry, tabId);
       });
       
@@ -198,25 +352,7 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   // キャンセルボタン
   const cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'キャンセル';
-  cancelBtn.style.cssText = `
-    width: 100%;
-    padding: 6px;
-    margin-top: 4px;
-    background: #f5f5f5;
-    border: none;
-    border-radius: 2px;
-    cursor: pointer;
-    font-size: 12px;
-    color: #666;
-  `;
-  
-  cancelBtn.addEventListener('mouseenter', () => {
-    cancelBtn.style.background = '#e0e0e0';
-  });
-  
-  cancelBtn.addEventListener('mouseleave', () => {
-    cancelBtn.style.background = '#f5f5f5';
-  });
+  cancelBtn.className = 'ss-bg-cancel-btn';
   
   cancelBtn.addEventListener('click', closeDialog);
   dialogContent.appendChild(cancelBtn);
@@ -253,97 +389,48 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
   
   const instruction = document.createElement('div');
   instruction.textContent = '追加フィールドを編集';
-  instruction.style.cssText = `
-    margin: 0 0 12px 0;
-    font-size: 12px;
-    color: #666;
-    padding: 0 8px;
-  `;
+  instruction.className = 'ss-bg-instruction';
   dialogContent.appendChild(instruction);
   
   // 編集可能なフィールドリスト
   const fieldsContainer = document.createElement('div');
-  fieldsContainer.style.cssText = `
-    max-height: 250px;
-    overflow-y: auto;
-    margin-bottom: 8px;
-  `;
+  fieldsContainer.className = 'ss-bg-fields-container';
+  fieldsContainer.style.maxHeight = '250px';
+  fieldsContainer.style.overflowY = 'auto';
   
   const additionalFields = entry.additionalFields || [];
   const fieldInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement }> = [];
   
   additionalFields.forEach((field, index) => {
     const fieldRow = document.createElement('div');
-    fieldRow.style.cssText = `
-      padding: 8px;
-      margin-bottom: 8px;
-      background: #f9f9f9;
-      border-radius: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    `;
+    fieldRow.className = 'ss-bg-field-row';
+    fieldRow.style.padding = '8px';
+    fieldRow.style.marginBottom = '8px';
+    fieldRow.style.background = '#f9f9f9';
+    fieldRow.style.borderRadius = '4px';
     
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.value = field.name;
     nameInput.placeholder = 'フィールド名';
-    nameInput.style.cssText = `
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 12px;
-      font-weight: 600;
-      box-sizing: border-box;
-    `;
+    nameInput.className = 'ss-bg-name-input';
     
     const valueInput = document.createElement('input');
     valueInput.type = 'text';
     valueInput.value = field.value;
     valueInput.placeholder = '値';
-    valueInput.style.cssText = `
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 12px;
-      box-sizing: border-box;
-    `;
+    valueInput.className = 'ss-bg-value-input';
     
     const selectorInput = document.createElement('input');
     selectorInput.type = 'text';
     selectorInput.value = field.selector || '';
     selectorInput.placeholder = 'セレクタ（省略可）';
-    selectorInput.style.cssText = `
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 11px;
-      font-family: monospace;
-      color: #666;
-      box-sizing: border-box;
-    `;
+    selectorInput.className = 'ss-bg-selector-input';
     
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '削除';
-    removeBtn.style.cssText = `
-      padding: 4px 8px;
-      background: #f44336;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 11px;
-      align-self: flex-start;
-    `;
-    removeBtn.addEventListener('mouseenter', () => {
-      removeBtn.style.background = '#da190b';
-    });
-    removeBtn.addEventListener('mouseleave', () => {
-      removeBtn.style.background = '#f44336';
-    });
+    removeBtn.className = 'ss-bg-remove-btn';
+    removeBtn.style.alignSelf = 'flex-start';
     removeBtn.addEventListener('click', () => {
       fieldRow.remove();
       const idx = fieldInputs.findIndex(f => f.nameInput === nameInput);
@@ -364,73 +451,31 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
   // フィールド追加ボタン
   const addBtn = createFieldButton('+ フィールドを追加', () => {
     const fieldRow = document.createElement('div');
-    fieldRow.style.cssText = `
-      padding: 8px;
-      margin-bottom: 8px;
-      background: #f9f9f9;
-      border-radius: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    `;
+    fieldRow.className = 'ss-bg-field-row';
+    fieldRow.style.padding = '8px';
+    fieldRow.style.marginBottom = '8px';
+    fieldRow.style.background = '#f9f9f9';
+    fieldRow.style.borderRadius = '4px';
     
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.placeholder = 'フィールド名';
-    nameInput.style.cssText = `
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 12px;
-      font-weight: 600;
-      box-sizing: border-box;
-    `;
+    nameInput.className = 'ss-bg-name-input';
     
     const valueInput = document.createElement('input');
     valueInput.type = 'text';
     valueInput.placeholder = '値';
-    valueInput.style.cssText = `
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 12px;
-      box-sizing: border-box;
-    `;
+    valueInput.className = 'ss-bg-value-input';
     
     const selectorInput = document.createElement('input');
     selectorInput.type = 'text';
     selectorInput.placeholder = 'セレクタ（省略可）';
-    selectorInput.style.cssText = `
-      width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ccc;
-      border-radius: 3px;
-      font-size: 11px;
-      font-family: monospace;
-      color: #666;
-      box-sizing: border-box;
-    `;
+    selectorInput.className = 'ss-bg-selector-input';
     
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '削除';
-    removeBtn.style.cssText = `
-      padding: 4px 8px;
-      background: #f44336;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 11px;
-      align-self: flex-start;
-    `;
-    removeBtn.addEventListener('mouseenter', () => {
-      removeBtn.style.background = '#da190b';
-    });
-    removeBtn.addEventListener('mouseleave', () => {
-      removeBtn.style.background = '#f44336';
-    });
+    removeBtn.className = 'ss-bg-remove-btn';
+    removeBtn.style.alignSelf = 'flex-start';
     removeBtn.addEventListener('click', () => {
       fieldRow.remove();
       const idx = fieldInputs.findIndex(f => f.nameInput === nameInput);
@@ -450,7 +495,10 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
   dialogContent.appendChild(addBtn);
   
   // 保存ボタン
-  const saveBtn = createFieldButton('保存', async () => {
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '保存';
+  saveBtn.className = 'ss-bg-save-btn';
+  saveBtn.addEventListener('click', async () => {
     const updatedFields = fieldInputs
       .map(inputs => ({
         name: inputs.nameInput.value.trim(),
@@ -478,16 +526,13 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
       alert('保存に失敗しました: ' + (response.error || '不明なエラー'));
     }
   });
-  saveBtn.style.background = '#4CAF50';
-  saveBtn.style.color = 'white';
   dialogContent.appendChild(saveBtn);
   
   // 戻るボタン
   const backBtn = createFieldButton('戻る', () => {
     showFieldSelectionDialog(entry, tabId);
   });
-  backBtn.style.background = '#f5f5f5';
-  backBtn.style.color = '#666';
+  backBtn.className = 'ss-bg-back-btn';
   dialogContent.appendChild(backBtn);
 }
 
@@ -496,45 +541,15 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
  */
 function createTitleBar(titleText: string, onClose: () => void): HTMLDivElement {
   const titleBar = document.createElement('div');
-  titleBar.style.cssText = `
-    margin: 0 0 8px 0;
-    padding: 4px 8px;
-    border-bottom: 1px solid #eee;
-    cursor: move;
-    user-select: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  `;
+  titleBar.className = 'ss-bg-title-bar';
   
   const title = document.createElement('div');
   title.textContent = titleText;
-  title.style.cssText = `
-    font-size: 14px;
-    font-weight: 600;
-    color: #333;
-  `;
+  title.className = 'ss-bg-title-text';
   
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '×';
-  closeBtn.style.cssText = `
-    background: none;
-    border: none;
-    font-size: 20px;
-    color: #666;
-    cursor: pointer;
-    padding: 0;
-    width: 20px;
-    height: 20px;
-    line-height: 20px;
-    text-align: center;
-  `;
-  closeBtn.addEventListener('mouseenter', () => {
-    closeBtn.style.color = '#000';
-  });
-  closeBtn.addEventListener('mouseleave', () => {
-    closeBtn.style.color = '#666';
-  });
+  closeBtn.className = 'ss-bg-close-btn';
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     onClose();
@@ -599,12 +614,7 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   
   const instruction = document.createElement('div');
   instruction.textContent = '入力する項目を選択';
-  instruction.style.cssText = `
-    margin: 0 0 8px 0;
-    font-size: 12px;
-    color: #666;
-    padding: 0 8px;
-  `;
+  instruction.className = 'ss-bg-instruction';
   dialogContent.appendChild(instruction);
   
   // 追加フィールド編集ボタン
@@ -685,25 +695,7 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   // 戻るボタン
   const backBtn = document.createElement('button');
   backBtn.textContent = '戻る';
-  backBtn.style.cssText = `
-    width: 100%;
-    padding: 6px;
-    margin-top: 4px;
-    background: #f5f5f5;
-    border: none;
-    border-radius: 2px;
-    cursor: pointer;
-    font-size: 12px;
-    color: #666;
-  `;
-  
-  backBtn.addEventListener('mouseenter', () => {
-    backBtn.style.background = '#e0e0e0';
-  });
-  
-  backBtn.addEventListener('mouseleave', () => {
-    backBtn.style.background = '#f5f5f5';
-  });
+  backBtn.className = 'ss-bg-back-btn';
   
   backBtn.addEventListener('click', async () => {
     const response = await chrome.runtime.sendMessage({ type: 'GET_PASSWORDS' });
@@ -732,29 +724,7 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
 function createFieldButton(text: string, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.textContent = text;
-  btn.style.cssText = `
-    display: block;
-    width: 100%;
-    padding: 8px;
-    margin-bottom: 2px;
-    background: white;
-    border: none;
-    border-radius: 2px;
-    cursor: pointer;
-    text-align: left;
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  `;
-  
-  btn.addEventListener('mouseenter', () => {
-    btn.style.background = '#f0f0f0';
-  });
-  
-  btn.addEventListener('mouseleave', () => {
-    btn.style.background = 'white';
-  });
+  btn.className = 'ss-bg-field-button';
   
   btn.addEventListener('click', onClick);
   
