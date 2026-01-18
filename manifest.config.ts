@@ -28,7 +28,7 @@ export default defineManifest({
     {
       matches: ['<all_urls>'],
       js: ['src/content/main.ts'],
-      run_at: 'document_idle'
+      run_at: 'document_end'
     }
   ],
   

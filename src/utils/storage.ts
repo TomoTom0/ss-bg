@@ -6,7 +6,8 @@ import type { EncryptedData } from '@/types/crypto';
  */
 const DEFAULT_SETTINGS: AppSettings = {
   sessionTimeout: 30,
-  autoLock: true
+  autoLock: true,
+  prfEnabled: true  // デフォルトでPRF有効
 };
 
 /**
