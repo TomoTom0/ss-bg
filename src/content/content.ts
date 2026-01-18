@@ -520,10 +520,22 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
     });
     
     if (response.success) {
-      // 保存成功：フィールド選択画面に戻る
       showFieldSelectionDialog(updatedEntry, tabId);
     } else {
-      alert('保存に失敗しました: ' + (response.error || '不明なエラー'));
+      const errorMsg = document.createElement('div');
+      errorMsg.textContent = '保存に失敗しました: ' + (response.error || '不明なエラー');
+      errorMsg.style.cssText = `
+        color: #d32f2f;
+        background: #ffebee;
+        padding: 8px;
+        border-radius: 2px;
+        margin-top: 4px;
+        font-size: 12px;
+      `;
+      dialogContent.appendChild(errorMsg);
+      setTimeout(() => {
+        errorMsg.remove();
+      }, 3000);
     }
   });
   dialogContent.appendChild(saveBtn);
