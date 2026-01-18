@@ -706,10 +706,15 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   });
   
   backBtn.addEventListener('click', async () => {
-    // 候補リストに戻る
-    const sessionData = await chrome.storage.session.get(['autofillCandidates', 'autofillTabId']);
-    if (sessionData.autofillCandidates) {
-      showPasswordDialog(sessionData.autofillCandidates, tabId);
+    const response = await chrome.runtime.sendMessage({ type: 'GET_PASSWORDS' });
+    if (response.success && response.data) {
+      const currentLastFocused = lastFocusedInput;
+      closeDialog();
+      lastFocusedInput = currentLastFocused;
+      await showPasswordDialog(response.data, tabId);
+    } else {
+      console.error('Failed to get passwords for back button:', response.error);
+      closeDialog();
     }
   });
   
