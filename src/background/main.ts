@@ -1,8 +1,5 @@
 import { handleMessage } from "./background";
 
-console.log('[SS-BG Background] Service Worker loaded!');
-console.log('[SS-BG Background] Version:', chrome.runtime.getManifest().version);
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[SS-BG Background] Message received:', message.type);
   handleMessage(message)
