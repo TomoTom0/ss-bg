@@ -1,6 +1,7 @@
 import { handleMessage } from "./background";
+import { isSessionStatus, isPasswordEntryArray } from "@/types/message";
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   console.log('[SS-BG Background] Message received:', message.type);
   handleMessage(message)
     .then(response => sendResponse(response))
@@ -10,7 +11,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         error: error instanceof Error ? error.message : "Unknown error"
       });
     });
-  
+
   return true;
 });
 
@@ -61,8 +62,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // セッション状態を確認
     const sessionStatus = await handleMessage({ type: 'GET_SESSION_STATUS' });
     console.log('[SS-BG] Session status:', sessionStatus);
-    
-    if (!sessionStatus.success || !sessionStatus.data?.authenticated) {
+
+    if (!sessionStatus.success || !isSessionStatus(sessionStatus.data) || !sessionStatus.data.authenticated) {
       console.log('[SS-BG] Not authenticated, opening popup for auth');
       
       // タブIDを保存（認証後にダイアログ表示するため）
@@ -90,18 +91,59 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
+// キーボードショートカットのハンドラ
+chrome.commands.onCommand.addListener(async (command) => {
+  console.log('[SS-BG Background] Command received:', command);
+
+  if (command === 'take-screenshot') {
+    const response = await handleMessage({ type: 'TAKE_SCREENSHOT' });
+    if (response.success) {
+      console.log('[SS-BG] Screenshot taken');
+    } else {
+      console.error('[SS-BG] Failed to take screenshot:', response.error);
+    }
+  } else if (command === 'autofill-password') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab?.id) {
+      console.log('[SS-BG Background] No active tab');
+      return;
+    }
+
+    // セッション状態を確認
+    const sessionStatus = await handleMessage({ type: 'GET_SESSION_STATUS' });
+    console.log('[SS-BG] Session status:', sessionStatus);
+
+    if (!sessionStatus.success || !isSessionStatus(sessionStatus.data) || !sessionStatus.data.authenticated) {
+      console.log('[SS-BG] Not authenticated, opening popup for auth');
+
+      // タブIDを保存（認証後にダイアログ表示するため）
+      await chrome.storage.session.set({
+        pendingAutofillTabId: tab.id
+      });
+
+      // 未認証の場合は認証を促す
+      await chrome.action.openPopup();
+      return;
+    }
+
+    // 認証済みの場合、パスワードダイアログを表示
+    await showPasswordDialog(tab.id);
+  }
+});
+
 // パスワードダイアログを表示する共通関数
 async function showPasswordDialog(tabId: number) {
   console.log('[SS-BG] Showing password dialog for tab', tabId);
-  
+
   // 全パスワードリストを取得
   const response = await handleMessage({ type: 'GET_PASSWORDS' });
-  
+
   console.log('[SS-BG] GET_PASSWORDS response:', response);
-  
-  if (response.success && response.data) {
+
+  if (response.success && isPasswordEntryArray(response.data)) {
     console.log('[SS-BG] Sending SHOW_PASSWORD_DIALOG to tab', tabId, 'with', response.data.length, 'passwords');
-    
+
     try {
       // Content Scriptにダイアログ表示を指示
       await chrome.tabs.sendMessage(tabId, {

@@ -1,10 +1,10 @@
 import type { Message, Response } from '@/types/message';
 import type { Session } from '@/types/session';
 import type { PasswordEntry } from '@/types/storage';
-import { authenticate, isSessionValid, registerCredential } from '@/utils/webauthn';
+import { authenticate, isSessionValid } from '@/utils/webauthn';
 import { decrypt, encrypt } from '@/utils/crypto';
 import { storage } from '@/utils/storage';
-import { matchUrls } from '@/utils/url-matcher';
+import { isStringRecord, isAppSettings, isPasswordEntry } from '@/types/message';
 
 // セッション（メモリ上のみ）
 let currentSession: Session | null = null;
@@ -15,27 +15,30 @@ let currentSession: Session | null = null;
 async function restoreSession(): Promise<void> {
   try {
     const sessionData = await chrome.storage.session.get(['encryptionKeyJwk', 'credentialId', 'expiresAt', 'isLocked']);
-    
-    if (sessionData.encryptionKeyJwk && sessionData.credentialId) {
+
+    if (isStringRecord(sessionData) &&
+        typeof sessionData.encryptionKeyJwk === 'object' &&
+        sessionData.encryptionKeyJwk !== null &&
+        typeof sessionData.credentialId === 'string') {
       // JWKからCryptoKeyを復元
       const key = await crypto.subtle.importKey(
         'jwk',
-        sessionData.encryptionKeyJwk,
+        sessionData.encryptionKeyJwk as JsonWebKey,
         { name: 'AES-GCM', length: 256 },
         true,
         ['encrypt', 'decrypt']
       );
-      
+
       // Base64からArrayBufferを復元
       const credentialId = base64ToArrayBuffer(sessionData.credentialId);
-      
+
       currentSession = {
         encryptionKey: key,
         credentialId,
-        expiresAt: sessionData.expiresAt || 0,
-        isLocked: sessionData.isLocked || false
+        expiresAt: typeof sessionData.expiresAt === 'number' ? sessionData.expiresAt : 0,
+        isLocked: typeof sessionData.isLocked === 'boolean' ? sessionData.isLocked : false
       };
-      
+
       console.log('Session restored from storage');
     }
   } catch (error) {
@@ -128,45 +131,67 @@ export async function handleMessage(message: Message): Promise<Response> {
   try {
     switch (message.type) {
       case 'CREATE_SESSION':
-        return await handleCreateSession(message.payload);
-      
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for CREATE_SESSION' };
+        }
+        return await handleCreateSession(message.payload as {
+          encryptionKey: JsonWebKey;
+          credentialId: string;
+          timeoutMinutes: number;
+        });
+
       case 'AUTHENTICATE':
         return await handleAuthenticate();
-      
+
       case 'GET_PASSWORDS':
         return await handleGetPasswords();
-      
+
       case 'SAVE_PASSWORD':
-        return await handleSavePassword(message.payload);
-      
+        if (!isPasswordEntry(message.payload)) {
+          return { success: false, error: 'Invalid payload for SAVE_PASSWORD' };
+        }
+        return await handleSavePassword(message.payload as PasswordEntry);
+
       case 'UPDATE_PASSWORD':
-        return await handleUpdatePassword(message.payload);
-      
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for UPDATE_PASSWORD' };
+        }
+        return await handleUpdatePassword(message.payload as { id: string; entry: PasswordEntry });
+
       case 'DELETE_PASSWORD':
-        return await handleDeletePassword(message.payload);
-      
+        if (!isStringRecord(message.payload) || !('id' in message.payload)) {
+          return { success: false, error: 'Invalid payload for DELETE_PASSWORD' };
+        }
+        return await handleDeletePassword(message.payload as { id: string });
+
       case 'SHOW_PASSWORD_DIALOG_FOR_TAB':
         // Popupからの要求でダイアログを表示
-        return await handleShowPasswordDialogForTab(message.payload);
-      
+        if (!isStringRecord(message.payload) || !('tabId' in message.payload)) {
+          return { success: false, error: 'Invalid payload for SHOW_PASSWORD_DIALOG_FOR_TAB' };
+        }
+        return await handleShowPasswordDialogForTab(message.payload as { tabId: number });
+
       case 'LOCK_SESSION':
         return handleLockSession();
-      
+
       case 'GET_SESSION_STATUS':
         return handleGetSessionStatus();
-      
+
       case 'TAKE_SCREENSHOT':
-        return await handleTakeScreenshot(message.payload);
-      
+        return await handleTakeScreenshot();
+
       case 'GET_SETTINGS':
         return await handleGetSettings();
-      
+
       case 'UPDATE_SETTINGS':
-        return await handleUpdateSettings(message.payload);
-      
+        if (!isAppSettings(message.payload)) {
+          return { success: false, error: 'Invalid payload for UPDATE_SETTINGS' };
+        }
+        return await handleUpdateSettings(message.payload as Partial<Record<string, unknown>>);
+
       case 'OPEN_OPTIONS_WITH_FORM_DATA':
         return handleOpenOptionsWithFormData();
-      
+
       default:
         return { success: false, error: 'Unknown message type' };
     }
@@ -227,13 +252,16 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
  */
 async function handleAuthenticate(): Promise<Response> {
   try {
-    const { key, credentialId } = await authenticate();
-    
     const settings = await storage.getSettings();
+    console.log('[SS-BG] Starting authentication with PRF enabled:', settings.prfEnabled);
+
+    const { key, credentialId } = await authenticate();
+
     const timeout = settings.sessionTimeout || 30;
-    
+
     await createSession(key, credentialId, timeout);
-    
+
+    console.log('[SS-BG] Authentication successful, session created');
     return { success: true };
   } catch (error) {
     return {
@@ -269,10 +297,27 @@ async function handleGetPasswords(): Promise<Response> {
     console.log('[SS-BG] Decryption successful, parsing JSON...');
     const passwords = JSON.parse(decryptedJson);
     console.log('[SS-BG] Parsed', passwords.length, 'passwords');
-    
+
     return { success: true, data: passwords };
   } catch (error) {
     console.error('[SS-BG] Error in handleGetPasswords:', error);
+
+    // 復号化エラーの場合、詳細情報を提供
+    if (error instanceof Error && error.name === 'OperationError') {
+      const settings = await storage.getSettings();
+      console.error('[SS-BG] Decryption failed - possible key mismatch');
+      console.error('[SS-BG] Current PRF enabled setting:', settings.prfEnabled);
+      console.error('[SS-BG] This usually happens when:');
+      console.error('[SS-BG] 1. PRF support status changed between encryption and decryption');
+      console.error('[SS-BG] 2. Different authentication method was used');
+      console.error('[SS-BG] 3. Credential was re-registered');
+
+      return {
+        success: false,
+        error: 'Decryption failed. The encryption key may have changed. Please reset the extension data from settings.'
+      };
+    }
+
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get passwords'
@@ -435,33 +480,36 @@ function handleGetSessionStatus(): Response {
 }
 
 /**
- * スクリーンショット撮影
+ * スクリーンショット撮影（ウィンドウのコンテンツ部分）
  */
-async function handleTakeScreenshot(payload: { crop: boolean }): Promise<Response> {
+async function handleTakeScreenshot(): Promise<Response> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+
     if (!tab || !tab.windowId) {
       return { success: false, error: 'No active tab found' };
     }
-    
+
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
       format: 'png'
     });
-    
-    if (payload.crop) {
-      // トリミングUIを表示（Phase 3で実装）
-      // TODO: implement cropping UI
+
+    const settings = await storage.getSettings();
+
+    if (settings.screenshotCopyToClipboard) {
+      await copyToClipboard(dataUrl);
     }
-    
-    const filename = `screenshot_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-    
-    await chrome.downloads.download({
-      url: dataUrl,
-      filename,
-      saveAs: false
-    });
-    
+
+    if (settings.screenshotDownloadImage) {
+      const filename = `screenshot_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+
+      await chrome.downloads.download({
+        url: dataUrl,
+        filename,
+        saveAs: false
+      });
+    }
+
     return { success: true };
   } catch (error) {
     return {
@@ -469,6 +517,38 @@ async function handleTakeScreenshot(payload: { crop: boolean }): Promise<Respons
       error: error instanceof Error ? error.message : 'Failed to take screenshot'
     };
   }
+}
+
+async function copyToClipboard(dataUrl: string): Promise<void> {
+  let offscreenUrl = chrome.runtime.getURL('src/offscreen/index.html');
+
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [offscreenUrl]
+  });
+
+  if (existingContexts.length === 0) {
+    await chrome.offscreen.createDocument({
+      url: offscreenUrl,
+      reasons: ['CLIPBOARD'],
+      justification: 'Copy screenshot to clipboard'
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'COPY_IMAGE_TO_CLIPBOARD', payload: { dataUrl } },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response?.success) {
+          resolve();
+        } else {
+          reject(new Error(response?.error || 'Failed to copy to clipboard'));
+        }
+      }
+    );
+  });
 }
 
 /**

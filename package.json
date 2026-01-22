@@ -1,7 +1,7 @@
 {
   "name": "ss-bg",
   "version": "0.1.0",
-  "description": "コンパクトなパスワードマネージャー & スクリーンショットツール Chrome拡張",
+  "description": "大きなスクリーンショットおよびテキストの管理",
   "type": "module",
   "scripts": {
     "dev": "vite",

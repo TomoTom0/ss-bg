@@ -2,6 +2,7 @@ import type { Message } from '@/types/message';
 import type { PasswordEntry } from '@/types/storage';
 import { getFocusedInput, generateSelector, detectFieldType } from '@/utils/field-detector';
 import { captureFormData, detectForms } from './form-detector';
+import { normalizeUrl, matchUrl } from '@/utils/url-matcher';
 
 // 右クリックされた入力フィールド
 let lastFocusedInput: HTMLInputElement | null = null;
@@ -71,6 +72,51 @@ function setupDialogListeners(): void {
 }
 
 /**
+ * ダイアログの最適な配置位置を計算
+ */
+function calculateDialogPosition(inputRect: DOMRect): { top: number; left: number } {
+  const dialogWidth = 350;
+  const dialogHeight = 300;
+  const margin = 10;
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // 右側のスペースをチェック
+  const spaceRight = viewportWidth - inputRect.right;
+  if (spaceRight >= dialogWidth + margin) {
+    return {
+      left: inputRect.right + margin,
+      top: Math.max(margin, Math.min(inputRect.top, viewportHeight - dialogHeight - margin))
+    };
+  }
+
+  // 左側のスペースをチェック
+  const spaceLeft = inputRect.left;
+  if (spaceLeft >= dialogWidth + margin) {
+    return {
+      left: inputRect.left - dialogWidth - margin,
+      top: Math.max(margin, Math.min(inputRect.top, viewportHeight - dialogHeight - margin))
+    };
+  }
+
+  // 下側のスペースをチェック
+  const spaceBelow = viewportHeight - inputRect.bottom;
+  if (spaceBelow >= dialogHeight + margin) {
+    return {
+      left: Math.max(margin, Math.min(inputRect.left, viewportWidth - dialogWidth - margin)),
+      top: inputRect.bottom + margin
+    };
+  }
+
+  // 上側に配置
+  return {
+    left: Math.max(margin, Math.min(inputRect.left, viewportWidth - dialogWidth - margin)),
+    top: Math.max(margin, inputRect.top - dialogHeight - margin)
+  };
+}
+
+/**
  * パスワード選択ダイアログを表示
  */
 async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): Promise<void> {
@@ -78,7 +124,7 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   if (dialogShadowHost) {
     return;
   }
-  
+
   // 最後にフォーカスされた入力欄の位置を取得
   const targetInput = lastFocusedInput || document.activeElement as HTMLInputElement;
   if (!targetInput || (targetInput.tagName !== 'INPUT' && targetInput.tagName !== 'TEXTAREA')) {
@@ -86,8 +132,9 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
     if (!firstInput) return;
     lastFocusedInput = firstInput;
   }
-  
+
   const rect = (lastFocusedInput || targetInput).getBoundingClientRect();
+  const dialogPos = calculateDialogPosition(rect);
   
   // Shadow DOMホストを作成
   dialogShadowHost = document.createElement('div');
@@ -109,7 +156,8 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   const styleEl = document.createElement('style');
   styleEl.textContent = `
     .ss-bg-dialog-content {
-      background: white;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(2px);
       border: 1px solid #ccc;
       border-radius: 4px;
       padding: 8px;
@@ -293,21 +341,19 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   `;
   dialogShadowRoot.appendChild(styleEl);
   
-  // ダイアログコンテンツを作成（入力欄の下に配置）
+  // ダイアログコンテンツを作成
   dialogContent = document.createElement('div');
   dialogContent.className = 'ss-bg-dialog-content';
-  dialogContent.style.top = `${rect.bottom + 5}px`;
-  dialogContent.style.left = `${rect.left}px`;
-  dialogContent.style.width = `${Math.max(rect.width, 250)}px`;
   dialogContent.style.cssText = `
     position: absolute;
-    top: ${rect.bottom + 5}px;
-    left: ${rect.left}px;
-    background: white;
+    top: ${dialogPos.top}px;
+    left: ${dialogPos.left}px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(2px);
     border: 1px solid #ccc;
     border-radius: 4px;
     padding: 8px;
-    width: ${Math.max(rect.width, 250)}px;
+    width: 250px;
     max-width: 350px;
     max-height: 300px;
     overflow-y: auto;
@@ -906,7 +952,7 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
     console.log('No form found');
     return;
   }
-  
+
   // セレクタ情報がある場合はそれを使用
   if (entry.usernameSelector && entry.username) {
     const usernameField = document.querySelector(entry.usernameSelector) as HTMLInputElement;
@@ -916,7 +962,7 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
       usernameField.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
-  
+
   if (entry.passwordSelector && entry.password) {
     const passwordField = document.querySelector(entry.passwordSelector) as HTMLInputElement;
     if (passwordField) {
@@ -925,7 +971,7 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
       passwordField.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
-  
+
   // 追加フィールド
   if (entry.additionalFields) {
     for (const field of entry.additionalFields) {
@@ -939,13 +985,16 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
       }
     }
   }
-  
+
   // セレクタ情報がない場合はヒューリスティック判定
   if (!entry.usernameSelector || !entry.passwordSelector) {
     await handleFillPasswordHeuristic(entry);
   }
-  
+
   console.log('Password filled successfully');
+
+  // 現在のURLが登録されていない場合、URLを追加するか提案
+  await suggestAddingCurrentUrl(entry);
 }
 
 /**
@@ -1021,6 +1070,50 @@ async function handleSaveCurrentForm(): Promise<void> {
   chrome.runtime.sendMessage({
     type: 'OPEN_OPTIONS_WITH_FORM_DATA'
   });
+}
+
+/**
+ * 現在のURLを登録するか提案
+ */
+async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
+  const currentUrl = window.location.href;
+  const normalizedCurrentUrl = normalizeUrl(currentUrl);
+
+  // 現在のURLがすでに登録されているかチェック
+  const matchPriority = matchUrl(currentUrl, entry.urls);
+  if (matchPriority > 0) {
+    // すでに登録されている（完全一致またはドメイン一致）
+    return;
+  }
+
+  // URLが登録されていない場合、追加するか確認
+  const shouldAdd = confirm(
+    `このサイト (${normalizedCurrentUrl}) は「${entry.title}」の登録URLに含まれていません。\n\nURLを追加しますか？`
+  );
+
+  if (shouldAdd) {
+    // URLを追加
+    const updatedEntry: PasswordEntry = {
+      ...entry,
+      urls: [...entry.urls, normalizedCurrentUrl],
+      updatedAt: Date.now()
+    };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SAVE_PASSWORD',
+        payload: updatedEntry
+      });
+
+      if (response.success) {
+        console.log('URL added successfully:', normalizedCurrentUrl);
+      } else {
+        console.error('Failed to add URL:', response.error);
+      }
+    } catch (error) {
+      console.error('Error adding URL:', error);
+    }
+  }
 }
 
 /**

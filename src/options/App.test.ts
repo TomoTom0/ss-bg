@@ -19,8 +19,7 @@ describe('Options App', () => {
         return Promise.resolve({
           success: true,
           data: {
-            sessionTimeout: 30,
-            autoLock: true
+            sessionTimeout: 30
           }
         });
       }
@@ -229,7 +228,7 @@ describe('Options App', () => {
       expect(wrapper.text()).toMatch(/タイムアウト|セッション/);
     });
 
-    it('自動ロック設定が表示される', async () => {
+    it('スクリーンショット設定が表示される', async () => {
       mockSendMessage.mockResolvedValue({
         success: true,
         data: []
@@ -239,7 +238,7 @@ describe('Options App', () => {
       await wrapper.vm.$nextTick();
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(wrapper.text()).toMatch(/自動ロック|ロック/);
+      expect(wrapper.text()).toMatch(/スクリーンショット/);
     });
   });
 

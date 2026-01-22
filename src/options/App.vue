@@ -156,22 +156,41 @@
       <!-- 設定 -->
       <section class="section">
         <h2>設定</h2>
-        
+
         <div class="form-group">
-          <label>セッションタイムアウト (分)</label>
-          <input v-model.number="settings.sessionTimeout" type="number" min="1" max="120" />
+          <label>セッションタイムアウト</label>
+          <select v-model.number="settings.sessionTimeout" class="select-input">
+            <option v-for="option in sessionTimeoutOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
         </div>
-        
+
+        <h3>スクリーンショット</h3>
         <div class="form-group">
           <label>
-            <input v-model="settings.autoLock" type="checkbox" />
-            自動ロック
+            <input v-model="settings.screenshotCopyToClipboard" type="checkbox" />
+            クリップボードにコピー
           </label>
         </div>
-        
+        <div class="form-group">
+          <label>
+            <input v-model="settings.screenshotDownloadImage" type="checkbox" />
+            画像をダウンロード
+          </label>
+        </div>
+
         <button @click="saveSettings" class="btn btn-primary">設定を保存</button>
-        
+
         <div v-if="settingsSaved" class="success">設定を保存しました</div>
+
+        <div class="form-group" style="margin-top: 20px;">
+          <label>キーボードショートカット</label>
+          <p style="font-size: 12px; color: #666; margin: 4px 0;">
+            パスワード自動入力のキーボードショートカットを設定できます
+          </p>
+          <button @click="openKeyboardShortcuts" class="btn btn-secondary">キーボードショートカットを設定</button>
+        </div>
       </section>
       
       <!-- 開発用：データクリア -->
@@ -192,15 +211,25 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import type { Message, Response } from '@/types/message';
-import type { PasswordEntry, Settings } from '@/types/storage';
+import type { PasswordEntry, AppSettings } from '@/types/storage';
 import { registerCredential, authenticate as webauthnAuthenticate } from '@/utils/webauthn';
 import { storage } from '@/utils/storage';
+import { normalizeUrl } from '@/utils/url-matcher';
 
 const passwords = ref<PasswordEntry[]>([]);
-const settings = ref<Settings>({
+const settings = ref<AppSettings>({
   sessionTimeout: 30,
-  autoLock: true
+  screenshotCopyToClipboard: true,
+  screenshotDownloadImage: true
 });
+
+const sessionTimeoutOptions = [
+  { value: 5, label: '5分' },
+  { value: 15, label: '15分' },
+  { value: 30, label: '30分' },
+  { value: 60, label: '60分' },
+  { value: 120, label: '120分' }
+];
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -419,25 +448,33 @@ function removeAdditionalField(index: number): void {
 
 async function saveEntry(): Promise<void> {
   formError.value = null;
-  
-  if (!formData.value.title || !formData.value.username || !formData.value.password) {
-    formError.value = '全てのフィールドを入力してください';
+
+  if (!formData.value.username || !formData.value.password) {
+    formError.value = 'ユーザー名とパスワードは必須です';
     return;
   }
-  
+
+  // URLを正規化（空を許容）
   const urls = formData.value.urlsText
     .split('\n')
-    .map(url => url.trim())
+    .map(url => normalizeUrl(url))
     .filter(url => url.length > 0);
-  
-  if (urls.length === 0) {
-    formError.value = '少なくとも1つのURLを入力してください';
-    return;
+
+  // titleが空の場合の処理
+  let title = formData.value.title.trim();
+  if (!title) {
+    if (urls.length > 0) {
+      // 最初のURLをtitleにする
+      title = urls[0];
+    } else {
+      // URLも空の場合は現在時刻をtitleにする
+      title = new Date().toLocaleString('ja-JP');
+    }
   }
-  
+
   const entry: PasswordEntry = {
     id: editingEntry.value?.id || Date.now().toString(),
-    title: formData.value.title,
+    title,
     username: formData.value.username,
     password: formData.value.password,
     urls,
@@ -445,17 +482,17 @@ async function saveEntry(): Promise<void> {
     updatedAt: Date.now(),
     usernameSelector: editingEntry.value?.usernameSelector,
     passwordSelector: editingEntry.value?.passwordSelector,
-    additionalFields: formData.value.additionalFields.length > 0 
+    additionalFields: formData.value.additionalFields.length > 0
       ? formData.value.additionalFields.filter(f => f.name && f.value)
       : undefined
   };
-  
+
   try {
     const response = await sendMessage({
       type: 'SAVE_PASSWORD',
       payload: entry
     });
-    
+
     if (response.success) {
       await loadPasswords();
       cancelEdit();
@@ -493,13 +530,13 @@ async function deleteEntry(): Promise<void> {
 
 async function saveSettings(): Promise<void> {
   settingsSaved.value = false;
-  
+
   try {
     const response = await sendMessage({
       type: 'UPDATE_SETTINGS',
       payload: settings.value
     });
-    
+
     if (response.success) {
       settingsSaved.value = true;
       setTimeout(() => {
@@ -511,6 +548,10 @@ async function saveSettings(): Promise<void> {
   } catch (e) {
     error.value = e instanceof Error ? e.message : '設定保存エラー';
   }
+}
+
+function openKeyboardShortcuts(): void {
+  chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 }
 
 onMounted(async () => {
@@ -759,6 +800,15 @@ h2 {
   background: #da190b;
 }
 
+.btn-secondary {
+  background: #2196F3;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #1976D2;
+}
+
 .btn-sm {
   padding: 6px 12px;
   font-size: 13px;
@@ -808,6 +858,16 @@ h2 {
 
 .form-group input[type="checkbox"] {
   margin-right: 8px;
+}
+
+.select-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
 }
 
 .form-actions {

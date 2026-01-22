@@ -38,3 +38,49 @@ export interface Response<T = unknown> {
   data?: T;
   error?: string;
 }
+
+/**
+ * セッション状態
+ */
+export interface SessionStatus {
+  authenticated: boolean;
+}
+
+/**
+ * 型ガード
+ */
+export function isSessionStatus(data: unknown): data is SessionStatus {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'authenticated' in data &&
+    typeof (data as SessionStatus).authenticated === 'boolean'
+  );
+}
+
+export function isPasswordEntry(data: unknown): data is { id: string } {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    'id' in data &&
+    typeof (data as { id: string }).id === 'string'
+  );
+}
+
+export function isPasswordEntryArray(data: unknown): data is { id: string }[] {
+  return (
+    Array.isArray(data) &&
+    data.every((item) => isPasswordEntry(item))
+  );
+}
+
+export function isAppSettings(data: unknown): data is Partial<Record<string, unknown>> {
+  return typeof data === 'object' && data !== null;
+}
+
+export function isStringRecord(data: unknown): data is Record<string, unknown> {
+  return typeof data === 'object' && data !== null;
+}
+
+
+
