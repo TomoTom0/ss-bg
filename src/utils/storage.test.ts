@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { storage } from './storage';
-import type { PasswordEntry, AppSettings } from '@/types/storage';
+import type { AppSettings } from '@/types/storage';
 import type { EncryptedData } from '@/types/crypto';
 
 // chrome.storage.local のモック
@@ -66,31 +66,41 @@ describe('storage utilities', () => {
     it('設定を保存して取得できる', async () => {
       const settings: AppSettings = {
         sessionTimeout: 45,
-        autoLock: false
+        screenshotCopyToClipboard: false,
+        screenshotDownloadImage: false
       };
-      
+
       await storage.saveSettings(settings);
       const retrieved = await storage.getSettings();
-      
-      expect(retrieved).toEqual(settings);
+
+      // マージされた設定を確認（デフォルト値も含まれる）
+      expect(retrieved).toMatchObject({
+        sessionTimeout: 45,
+        screenshotCopyToClipboard: false,
+        screenshotDownloadImage: false
+      });
     });
 
     it('設定が未設定の場合はデフォルト値を返す', async () => {
       const retrieved = await storage.getSettings();
-      
+
       expect(retrieved).toEqual({
         sessionTimeout: 30,
-        autoLock: true
+        prfEnabled: false,
+        screenshotCopyToClipboard: true,
+        screenshotDownloadImage: true
       });
     });
 
     it('部分的な設定を保存した場合、デフォルト値とマージされる', async () => {
       await storage.saveSettings({ sessionTimeout: 60 } as any);
       const retrieved = await storage.getSettings();
-      
+
       expect(retrieved).toEqual({
         sessionTimeout: 60,
-        autoLock: true // デフォルト値
+        prfEnabled: false,
+        screenshotCopyToClipboard: true,
+        screenshotDownloadImage: true
       });
     });
   });
@@ -130,15 +140,17 @@ describe('storage utilities', () => {
   describe('clearAll', () => {
     it('全てのデータをクリアできる', async () => {
       await storage.saveCredentialId('test-id');
-      await storage.saveSettings({ sessionTimeout: 60, autoLock: false });
+      await storage.saveSettings({ sessionTimeout: 60 } as any);
       await storage.markSetupComplete();
-      
+
       await storage.clearAll();
-      
+
       expect(await storage.getCredentialId()).toBeUndefined();
       expect(await storage.getSettings()).toEqual({
         sessionTimeout: 30,
-        autoLock: true
+        prfEnabled: false,
+        screenshotCopyToClipboard: true,
+        screenshotDownloadImage: true
       });
       expect(await storage.getSetupStatus()).toBe(false);
       expect(chrome.storage.local.clear).toHaveBeenCalled();
@@ -164,11 +176,11 @@ describe('storage utilities', () => {
       // 初期状態
       expect(await storage.getSetupStatus()).toBe(false);
       expect(await storage.getCredentialId()).toBeUndefined();
-      
+
       // セットアップ
       await storage.saveCredentialId('credential-abc123');
-      await storage.saveSettings({ sessionTimeout: 60, autoLock: true });
-      
+      await storage.saveSettings({ sessionTimeout: 60 } as any);
+
       // パスワード保存
       const encryptedData: EncryptedData = {
         iv: 'iv-123',
@@ -177,27 +189,28 @@ describe('storage utilities', () => {
         version: 1
       };
       await storage.saveEncryptedPasswords(encryptedData);
-      
+
       // セットアップ完了
       await storage.markSetupComplete();
-      
+
       // 検証
       expect(await storage.getSetupStatus()).toBe(true);
       expect(await storage.getCredentialId()).toBe('credential-abc123');
       expect(await storage.getSettings()).toEqual({
         sessionTimeout: 60,
-        autoLock: true
+        prfEnabled: false,
+        screenshotCopyToClipboard: true,
+        screenshotDownloadImage: true
       });
       expect(await storage.getEncryptedPasswords()).toEqual(encryptedData);
     });
 
     it('設定を複数回更新できる', async () => {
-      await storage.saveSettings({ sessionTimeout: 30, autoLock: true });
+      await storage.saveSettings({ sessionTimeout: 30 } as any);
       expect((await storage.getSettings()).sessionTimeout).toBe(30);
-      
-      await storage.saveSettings({ sessionTimeout: 60, autoLock: false });
+
+      await storage.saveSettings({ sessionTimeout: 60 } as any);
       expect((await storage.getSettings()).sessionTimeout).toBe(60);
-      expect((await storage.getSettings()).autoLock).toBe(false);
     });
   });
 });

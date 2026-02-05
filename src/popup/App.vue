@@ -162,17 +162,12 @@ async function authenticate(): Promise<void> {
       await loadSessionStatus();
       actionError.value = null;
       
-      console.log('[SS-BG Popup] Checking for pendingAutofillTabId...');
-      
       // 認証完了後、保留中のタブIDがあればダイアログを表示
       const sessionData = await chrome.storage.session.get(['pendingAutofillTabId']);
-      console.log('[SS-BG Popup] Session data:', sessionData);
       
       if (sessionData.pendingAutofillTabId) {
         const tabId = sessionData.pendingAutofillTabId;
         await chrome.storage.session.remove(['pendingAutofillTabId']);
-        
-        console.log('[SS-BG Popup] Sending SHOW_PASSWORD_DIALOG_FOR_TAB for tab', tabId);
         
         // Backgroundにダイアログ表示を依頼
         try {
@@ -180,8 +175,6 @@ async function authenticate(): Promise<void> {
             type: 'SHOW_PASSWORD_DIALOG_FOR_TAB',
             payload: { tabId }
           });
-          
-          console.log('[SS-BG Popup] Message sent, result:', result);
           
           if (result.success) {
             // 成功したらPopupを閉じる
@@ -194,8 +187,6 @@ async function authenticate(): Promise<void> {
           console.error('[SS-BG Popup] Error sending message:', error);
           actionError.value = 'メッセージ送信エラー: ' + (error instanceof Error ? error.message : 'Unknown error');
         }
-      } else {
-        console.log('[SS-BG Popup] No pendingAutofillTabId found');
       }
     } else {
       actionError.value = response.error || '認証に失敗しました';
@@ -317,11 +308,9 @@ onMounted(async () => {
   
   // 保留中のタブIDを確認（認証完了後のダイアログ表示用）
   const sessionData = await chrome.storage.session.get(['pendingAutofillTabId']);
-  console.log('[SS-BG Popup onMounted] Checking pendingAutofillTabId:', sessionData.pendingAutofillTabId);
-  
+
   // 未認証の場合は自動認証
   if (sessionStatus.value && !sessionStatus.value.authenticated) {
-    console.log('[SS-BG Popup onMounted] Not authenticated, calling authenticate()');
     await authenticate();
     // authenticate()内でpendingAutofillTabIdをチェックするので、ここでreturn
     return;
@@ -329,7 +318,6 @@ onMounted(async () => {
   
   // 既に認証済みで、pendingAutofillTabIdがある場合
   if (sessionData.pendingAutofillTabId) {
-    console.log('[SS-BG Popup onMounted] Already authenticated, showing dialog for tab', sessionData.pendingAutofillTabId);
     const tabId = sessionData.pendingAutofillTabId;
     await chrome.storage.session.remove(['pendingAutofillTabId']);
     
@@ -339,8 +327,6 @@ onMounted(async () => {
         type: 'SHOW_PASSWORD_DIALOG_FOR_TAB',
         payload: { tabId }
       });
-      
-      console.log('[SS-BG Popup onMounted] Message sent, result:', result);
       
       if (result.success) {
         // 成功したらPopupを閉じる

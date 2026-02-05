@@ -72,23 +72,11 @@ export async function registerCredential(): Promise<PublicKeyCredential> {
   // PRF対応確認
   const prfResult = credential.getClientExtensionResults().prf;
   const prfEnabled = prfResult?.enabled ?? false;
-  
-  console.log('WebAuthn Credential created:');
-  console.log('- Authenticator Attachment:', credential.authenticatorAttachment);
-  console.log('- PRF Extension Result:', prfResult);
-  console.log('- PRF Enabled:', prfEnabled);
-  console.log('- Credential ID length:', credential.rawId.byteLength);
-  
+
   // Credential IDを保存
   const credentialIdBase64 = arrayBufferToBase64(credential.rawId);
   await storage.saveCredentialId(credentialIdBase64);
   await storage.saveSettings({ prfEnabled });
-  
-  if (prfEnabled) {
-    console.log('PRF is available - using PRF-based key derivation');
-  } else {
-    console.log('PRF not available - using signature-based key derivation');
-  }
   
   return credential;
 }
@@ -107,17 +95,12 @@ export async function authenticate(): Promise<{ key: CryptoKey; credentialId: Ar
   // PRF対応状態を取得
   const settings = await storage.getSettings();
   const prfEnabled = settings.prfEnabled ?? false;
-  
-  console.log('[WebAuthn] Authenticating with settings:', settings);
-  console.log('[WebAuthn] PRF enabled:', prfEnabled);
-  
+
   if (prfEnabled) {
     // PRF対応の場合
-    console.log('[WebAuthn] Using PRF-based authentication');
     return await authenticateWithPRF(credentialId);
   } else {
     // PRF未対応の場合、署名ベースで鍵を導出
-    console.log('[WebAuthn] Using signature-based authentication');
     return await authenticateWithSignature(credentialId);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchUrl, matchUrls } from './url-matcher';
+import { matchUrl, matchUrls, normalizeUrl } from './url-matcher';
 import type { PasswordEntry } from '@/types/storage';
 
 describe('url-matcher utilities', () => {
@@ -244,11 +244,11 @@ describe('url-matcher utilities', () => {
         'https://github.com/login',
         'https://github.com/session'
       ]);
-      
+
       const loginUrl = 'https://github.com/login';
       const sessionUrl = 'https://github.com/session';
       const dashboardUrl = 'https://github.com/dashboard';
-      
+
       expect(matchUrl(loginUrl, entry.urls)).toBe(2);
       expect(matchUrl(sessionUrl, entry.urls)).toBe(2);
       expect(matchUrl(dashboardUrl, entry.urls)).toBe(1);
@@ -259,11 +259,11 @@ describe('url-matcher utilities', () => {
         'https://accounts.google.com/ServiceLogin',
         'https://accounts.google.com/signin'
       ]);
-      
+
       const loginUrl = 'https://accounts.google.com/ServiceLogin';
       const signupUrl = 'https://accounts.google.com/signup';
       const gmailUrl = 'https://mail.google.com/';
-      
+
       expect(matchUrl(loginUrl, entry.urls)).toBe(2);
       expect(matchUrl(signupUrl, entry.urls)).toBe(1);
       expect(matchUrl(gmailUrl, entry.urls)).toBe(0); // 別サブドメイン
@@ -274,14 +274,62 @@ describe('url-matcher utilities', () => {
         'http://localhost:3000/login',
         'http://127.0.0.1:3000/login'
       ]);
-      
+
       const localhostUrl = 'http://localhost:3000/login';
       const localhostDashboard = 'http://localhost:3000/dashboard';
       const ipUrl = 'http://127.0.0.1:3000/login';
-      
+
       expect(matchUrl(localhostUrl, entry.urls)).toBe(2);
       expect(matchUrl(localhostDashboard, entry.urls)).toBe(1);
       expect(matchUrl(ipUrl, entry.urls)).toBe(2);
+    });
+  });
+
+  describe('normalizeUrl', () => {
+    it('https://を除去してホスト名とパスを返す', () => {
+      expect(normalizeUrl('https://example.com/login')).toBe('example.com/login');
+    });
+
+    it('http://を除去してホスト名とパスを返す', () => {
+      expect(normalizeUrl('http://example.com/login')).toBe('example.com/login');
+    });
+
+    it('末尾のスラッシュを除去する', () => {
+      expect(normalizeUrl('https://example.com/login/')).toBe('example.com/login');
+      expect(normalizeUrl('https://example.com/')).toBe('example.com');
+    });
+
+    it('デフォルトポート（80, 443）は除去する', () => {
+      expect(normalizeUrl('http://example.com:80/login')).toBe('example.com/login');
+      expect(normalizeUrl('https://example.com:443/login')).toBe('example.com/login');
+    });
+
+    it('カスタムポートは保持する', () => {
+      expect(normalizeUrl('https://example.com:8080/login')).toBe('example.com:8080/login');
+      expect(normalizeUrl('http://localhost:3000/dashboard')).toBe('localhost:3000/dashboard');
+    });
+
+    it('空文字列は空文字列を返す', () => {
+      expect(normalizeUrl('')).toBe('');
+      expect(normalizeUrl('   ')).toBe('');
+    });
+
+    it('無効なURLはそのまま返す', () => {
+      expect(normalizeUrl('not-a-url')).toBe('not-a-url');
+    });
+
+    it('クエリパラメータとフラグメントは保持しない', () => {
+      // URLオブジェクトで解析するため、クエリパラメータは除去される
+      const normalized = normalizeUrl('https://example.com/login?foo=bar#section');
+      expect(normalized).toBe('example.com/login');
+    });
+
+    it('サブドメインを含むURLを正規化する', () => {
+      expect(normalizeUrl('https://app.example.com/dashboard')).toBe('app.example.com/dashboard');
+    });
+
+    it('複数階層のパスを正規化する', () => {
+      expect(normalizeUrl('https://example.com/path/to/page')).toBe('example.com/path/to/page');
     });
   });
 });

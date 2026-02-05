@@ -6,8 +6,9 @@ import type { EncryptedData } from '@/types/crypto';
  */
 const DEFAULT_SETTINGS: AppSettings = {
   sessionTimeout: 30,
-  autoLock: true,
-  prfEnabled: true  // デフォルトでPRF有効
+  prfEnabled: false,
+  screenshotCopyToClipboard: true,
+  screenshotDownloadImage: true
 };
 
 /**
@@ -18,7 +19,7 @@ class StorageWrapper {
    * Credential IDを取得
    */
   async getCredentialId(): Promise<string | undefined> {
-    const result = await chrome.storage.local.get('credentialId');
+    const result = await chrome.storage.local.get('credentialId') as { credentialId?: string };
     return result.credentialId;
   }
 
@@ -33,10 +34,10 @@ class StorageWrapper {
    * アプリケーション設定を取得
    */
   async getSettings(): Promise<AppSettings> {
-    const result = await chrome.storage.local.get('settings');
+    const result = await chrome.storage.local.get('settings') as { settings?: Partial<AppSettings> };
     return {
       ...DEFAULT_SETTINGS,
-      ...result.settings
+      ...(result.settings || {})
     };
   }
 
@@ -57,7 +58,7 @@ class StorageWrapper {
    * 暗号化されたパスワードデータを取得
    */
   async getEncryptedPasswords(): Promise<EncryptedData | undefined> {
-    const result = await chrome.storage.local.get('encryptedPasswords');
+    const result = await chrome.storage.local.get('encryptedPasswords') as { encryptedPasswords?: string };
     if (!result.encryptedPasswords) {
       return undefined;
     }
@@ -77,7 +78,7 @@ class StorageWrapper {
    * セットアップ完了状態を取得
    */
   async getSetupStatus(): Promise<boolean> {
-    const result = await chrome.storage.local.get('isSetupComplete');
+    const result = await chrome.storage.local.get('isSetupComplete') as { isSetupComplete?: boolean };
     return result.isSetupComplete ?? false;
   }
 

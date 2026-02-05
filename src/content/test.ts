@@ -1,9 +1,4 @@
 // Simple test content script
-console.log('========================================');
-console.log('[SS-BG TEST] Content script is LOADED!');
-console.log('[SS-BG TEST] URL:', window.location.href);
-console.log('[SS-BG TEST] Document ready state:', document.readyState);
-console.log('========================================');
 
 // Add visible element to page
 const testDiv = document.createElement('div');
@@ -22,5 +17,3 @@ testDiv.style.cssText = `
 `;
 testDiv.textContent = 'SS-BG LOADED';
 document.body.appendChild(testDiv);
-
-console.log('[SS-BG TEST] Red marker added to page');

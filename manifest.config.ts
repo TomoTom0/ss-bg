@@ -14,7 +14,8 @@ export default defineManifest({
     'tabs',
     'scripting',
     'downloads',
-    'contextMenus'
+    'contextMenus',
+    'offscreen'
   ],
   
   host_permissions: ['<all_urls>'],
@@ -48,19 +49,13 @@ export default defineManifest({
     '48': 'icons/icon48.png',
     '128': 'icons/icon128.png'
   },
-  
+
   commands: {
     'take-screenshot': {
-      suggested_key: {
-        default: 'Ctrl+Shift+S'
-      },
       description: 'スクリーンショットを撮影'
     },
-    'take-screenshot-crop': {
-      suggested_key: {
-        default: 'Ctrl+Shift+C'
-      },
-      description: 'スクリーンショット撮影後トリミング'
+    'autofill-password': {
+      description: 'パスワードを自動入力'
     }
   }
 });
