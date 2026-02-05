@@ -121,7 +121,7 @@ async function showPasswordDialog(tabId: number) {
         }
       });
     } catch (error) {
-      // Error handling
+      console.error('[SS-BG] Failed to send message to content script:', error);
     }
   }
 }

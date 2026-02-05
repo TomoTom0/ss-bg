@@ -761,6 +761,7 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
       lastFocusedInput = currentLastFocused;
       await showPasswordDialog(response.data, tabId);
     } else {
+      console.error('[SS-BG] Failed to get passwords for back button:', response.error);
       closeDialog();
     }
   });
@@ -1095,7 +1096,7 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
         // URL added successfully
       }
     } catch (error) {
-      // Error adding URL
+      console.error('[SS-BG] Error adding URL:', error);
     }
   }
 }
