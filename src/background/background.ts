@@ -39,7 +39,6 @@ async function restoreSession(): Promise<void> {
         isLocked: typeof sessionData.isLocked === 'boolean' ? sessionData.isLocked : false
       };
 
-      console.log('Session restored from storage');
     }
   } catch (error) {
     console.error('Failed to restore session:', error);
@@ -109,15 +108,6 @@ export async function lockSession(): Promise<void> {
 export function getSessionStatus(): { authenticated: boolean; expiresAt?: number } {
   const isValid = isSessionValid(currentSession);
   const now = Date.now();
-  if (currentSession) {
-    console.log('Session check:', {
-      now: new Date(now).toISOString(),
-      expiresAt: new Date(currentSession.expiresAt).toISOString(),
-      isLocked: currentSession.isLocked,
-      timeLeft: Math.round((currentSession.expiresAt - now) / 1000 / 60) + ' minutes',
-      isValid
-    });
-  }
   return {
     authenticated: isValid,
     expiresAt: currentSession?.expiresAt
@@ -223,10 +213,7 @@ async function handleCreateSession(payload: {
     
     // Base64をArrayBufferに変換
     const credentialId = base64ToArrayBuffer(payload.credentialId);
-    
-    console.log('Creating session with timeout:', payload.timeoutMinutes, 'minutes');
-    console.log('Session will expire at:', new Date(Date.now() + payload.timeoutMinutes * 60 * 1000).toISOString());
-    
+
     await createSession(key, credentialId, payload.timeoutMinutes);
     
     return { success: true };
@@ -253,7 +240,6 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 async function handleAuthenticate(): Promise<Response> {
   try {
     const settings = await storage.getSettings();
-    console.log('[SS-BG] Starting authentication with PRF enabled:', settings.prfEnabled);
 
     const { key, credentialId } = await authenticate();
 
@@ -261,7 +247,6 @@ async function handleAuthenticate(): Promise<Response> {
 
     await createSession(key, credentialId, timeout);
 
-    console.log('[SS-BG] Authentication successful, session created');
     return { success: true };
   } catch (error) {
     return {
@@ -275,43 +260,24 @@ async function handleAuthenticate(): Promise<Response> {
  * パスワード取得
  */
 async function handleGetPasswords(): Promise<Response> {
-  console.log('[SS-BG] handleGetPasswords called, session valid:', isSessionValid(currentSession));
-  
   if (!isSessionValid(currentSession)) {
-    console.error('[SS-BG] Session is not valid in handleGetPasswords');
     return { success: false, error: 'Session expired. Please authenticate.' };
   }
-  
+
   try {
-    console.log('[SS-BG] Getting encrypted passwords from storage...');
     const encryptedData = await storage.getEncryptedPasswords();
-    console.log('[SS-BG] Encrypted data:', encryptedData ? 'exists' : 'null');
-    
+
     if (!encryptedData) {
-      console.log('[SS-BG] No encrypted data, returning empty array');
       return { success: true, data: [] };
     }
-    
-    console.log('[SS-BG] Decrypting passwords...');
+
     const decryptedJson = await decrypt(encryptedData, currentSession!.encryptionKey);
-    console.log('[SS-BG] Decryption successful, parsing JSON...');
     const passwords = JSON.parse(decryptedJson);
-    console.log('[SS-BG] Parsed', passwords.length, 'passwords');
 
     return { success: true, data: passwords };
   } catch (error) {
-    console.error('[SS-BG] Error in handleGetPasswords:', error);
-
     // 復号化エラーの場合、詳細情報を提供
     if (error instanceof Error && error.name === 'OperationError') {
-      const settings = await storage.getSettings();
-      console.error('[SS-BG] Decryption failed - possible key mismatch');
-      console.error('[SS-BG] Current PRF enabled setting:', settings.prfEnabled);
-      console.error('[SS-BG] This usually happens when:');
-      console.error('[SS-BG] 1. PRF support status changed between encryption and decryption');
-      console.error('[SS-BG] 2. Different authentication method was used');
-      console.error('[SS-BG] 3. Credential was re-registered');
-
       return {
         success: false,
         error: 'Decryption failed. The encryption key may have changed. Please reset the extension data from settings.'
@@ -428,8 +394,6 @@ async function handleDeletePassword(payload: { id: string }): Promise<Response> 
  * タブにパスワードダイアログを表示
  */
 async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promise<Response> {
-  console.log('[SS-BG] handleShowPasswordDialogForTab called for tab', payload.tabId);
-  
   if (!isSessionValid(currentSession)) {
     console.error('[SS-BG] Session is not valid');
     return { success: false, error: 'Session expired' };
@@ -442,8 +406,6 @@ async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promi
     }
     const passwords = (passwordsResponse.data as PasswordEntry[]) || [];
 
-    console.log('[SS-BG] Sending SHOW_PASSWORD_DIALOG to tab', payload.tabId, 'with', passwords.length, 'passwords');
-    
     await chrome.tabs.sendMessage(payload.tabId, {
       type: 'SHOW_PASSWORD_DIALOG',
       payload: {
@@ -451,11 +413,9 @@ async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promi
         tabId: payload.tabId
       }
     });
-    
-    console.log('[SS-BG] Message sent successfully to tab', payload.tabId);
+
     return { success: true };
   } catch (error) {
-    console.error('[SS-BG] Error in handleShowPasswordDialogForTab:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to show password dialog'

@@ -73,7 +73,12 @@ describe('storage utilities', () => {
       await storage.saveSettings(settings);
       const retrieved = await storage.getSettings();
 
-      expect(retrieved).toEqual(settings);
+      // マージされた設定を確認（デフォルト値も含まれる）
+      expect(retrieved).toMatchObject({
+        sessionTimeout: 45,
+        screenshotCopyToClipboard: false,
+        screenshotDownloadImage: false
+      });
     });
 
     it('設定が未設定の場合はデフォルト値を返す', async () => {

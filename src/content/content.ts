@@ -23,7 +23,6 @@ const HIGHLIGHT_CLASS = 'ss-bg-highlight-target';
  * Content Scriptの初期化
  */
 export function initialize(): void {
-  console.log('[SS-BG Content] Initializing content script');
   injectHighlightStyles();
   setupContextMenuListener();
   setupMessageListener();
@@ -406,12 +405,11 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   dialogShadowRoot.appendChild(dialogContent);
   document.body.appendChild(dialogShadowHost);
   document.body.classList.add('ss-bg-dialog-active');
-  console.log('[SS-BG] Dialog added to DOM, host element:', dialogShadowHost);
-  
+
   // MutationObserverで削除を監視
   const observer = new MutationObserver(() => {
     if (dialogShadowHost && !document.body.contains(dialogShadowHost)) {
-      console.error('[SS-BG] Dialog was removed from DOM externally!');
+      // Dialog was removed externally
     }
   });
   observer.observe(document.body, { childList: true });
@@ -763,7 +761,6 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
       lastFocusedInput = currentLastFocused;
       await showPasswordDialog(response.data, tabId);
     } else {
-      console.error('Failed to get passwords for back button:', response.error);
       closeDialog();
     }
   });
@@ -909,10 +906,7 @@ function setupContextMenuListener(): void {
  * backgroundからのメッセージリスナー
  */
 function setupMessageListener(): void {
-  console.log('[SS-BG Content] Setting up message listener');
-  
   chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
-    console.log('[SS-BG Content] Received message:', message.type);
     
     if (message.type === 'FILL_PASSWORD') {
       handleFillPassword(message.payload);
@@ -927,14 +921,12 @@ function setupMessageListener(): void {
       sendResponse({ success: true });
       return true;
     } else if (message.type === 'SHOW_PASSWORD_DIALOG') {
-      console.log('[SS-BG Content] Showing password dialog with candidates:', message.payload.candidates.length);
       // コンテキストメニューから呼ばれる
       showPasswordDialog(message.payload.candidates, message.payload.tabId)
         .then(() => {
           sendResponse({ success: true });
         })
         .catch(error => {
-          console.error('[SS-BG Content] Error showing dialog:', error);
           sendResponse({ success: false, error: error.message });
         });
       return true; // 非同期レスポンスを返すことを示す
@@ -949,7 +941,6 @@ function setupMessageListener(): void {
 async function handleFillPassword(entry: PasswordEntry): Promise<void> {
   const form = lastFocusedInput?.closest('form') || document.querySelector('form');
   if (!form) {
-    console.log('No form found');
     return;
   }
 
@@ -990,8 +981,6 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
   if (!entry.usernameSelector || !entry.passwordSelector) {
     await handleFillPasswordHeuristic(entry);
   }
-
-  console.log('Password filled successfully');
 
   // 現在のURLが登録されていない場合、URLを追加するか提案
   await suggestAddingCurrentUrl(entry);
@@ -1036,15 +1025,12 @@ async function handleFillPasswordHeuristic(entry: PasswordEntry): Promise<void> 
 async function handleFillField(payload: { value: string }): Promise<void> {
   const focused = getFocusedInput() || lastFocusedInput;
   if (!focused) {
-    console.log('No input field focused');
     return;
   }
-  
+
   focused.value = payload.value;
   focused.dispatchEvent(new Event('input', { bubbles: true }));
   focused.dispatchEvent(new Event('change', { bubbles: true }));
-  
-  console.log('Field filled successfully');
 }
 
 /**
@@ -1106,12 +1092,10 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
       });
 
       if (response.success) {
-        console.log('URL added successfully:', normalizedCurrentUrl);
-      } else {
-        console.error('Failed to add URL:', response.error);
+        // URL added successfully
       }
     } catch (error) {
-      console.error('Error adding URL:', error);
+      // Error adding URL
     }
   }
 }
