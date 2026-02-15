@@ -51,4 +51,4 @@ bg-ssは、Windowsユーザー向けの生産性向上ツールです。
 
 ## プライバシーポリシー
 
-以下の内容を `store-landing/privacy-policy.html` として保存し、Chrome Web Storeのプライバシー実践宣言としても使用します。
+以下の内容をChrome Web Storeのプライバシー実践宣言として使用します。
