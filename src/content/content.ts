@@ -883,10 +883,239 @@ function removeAllHighlights(): void {
     }
   });
   highlightElements = [];
-  
+
   // ハイライトクラスを削除
   document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach(el => {
     el.classList.remove(HIGHLIGHT_CLASS);
+  });
+}
+
+/**
+ * エラーダイアログを表示
+ */
+function showErrorDialog(message: string): void {
+  // 既存のダイアログがあれば閉じる
+  if (dialogShadowHost) {
+    closeDialog();
+  }
+
+  // 画面中央に配置
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // Shadow DOMホストを作成
+  dialogShadowHost = document.createElement('div');
+  dialogShadowHost.id = 'ss-bg-error-dialog-host';
+  dialogShadowHost.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2147483647;
+    pointer-events: none;
+  `;
+
+  // Shadow DOMを作成
+  dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
+
+  // CSSを注入
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `
+    .ss-bg-error-dialog-content {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border: 1px solid #d32f2f;
+      border-radius: 4px;
+      padding: 16px;
+      min-width: 280px;
+      max-width: 400px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      pointer-events: auto;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    .ss-bg-error-title {
+      color: #d32f2f;
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+    .ss-bg-error-message {
+      color: #333;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    .ss-bg-error-close-btn {
+      width: 100%;
+      padding: 8px;
+      background: #f5f5f5;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #333;
+    }
+    .ss-bg-error-close-btn:hover {
+      background: #e0e0e0;
+    }
+  `;
+
+  // ダイアログコンテンツを作成
+  const dialogContent = document.createElement('div');
+  dialogContent.className = 'ss-bg-error-dialog-content';
+
+  const title = document.createElement('div');
+  title.className = 'ss-bg-error-title';
+  title.textContent = 'エラー';
+
+  const messageEl = document.createElement('div');
+  messageEl.className = 'ss-bg-error-message';
+  messageEl.textContent = message;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ss-bg-error-close-btn';
+  closeBtn.textContent = '閉じる';
+  closeBtn.onclick = closeDialog;
+
+  dialogContent.appendChild(title);
+  dialogContent.appendChild(messageEl);
+  dialogContent.appendChild(closeBtn);
+
+  dialogShadowRoot.appendChild(styleEl);
+  dialogShadowRoot.appendChild(dialogContent);
+  document.body.appendChild(dialogShadowHost);
+}
+
+/**
+ * 確認ダイアログを表示
+ */
+function showConfirmDialog(message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    // 既存のダイアログがあれば閉じる
+    if (dialogShadowHost) {
+      closeDialog();
+    }
+
+    // Shadow DOMホストを作成
+    dialogShadowHost = document.createElement('div');
+    dialogShadowHost.id = 'ss-bg-confirm-dialog-host';
+    dialogShadowHost.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2147483647;
+      pointer-events: none;
+    `;
+
+    // Shadow DOMを作成
+    dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
+
+    // CSSを注入
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      .ss-bg-confirm-dialog-content {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 16px;
+        min-width: 300px;
+        max-width: 450px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        pointer-events: auto;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+      }
+      .ss-bg-confirm-title {
+        font-weight: 600;
+        margin-bottom: 12px;
+        font-size: 16px;
+        color: #333;
+      }
+      .ss-bg-confirm-message {
+        color: #333;
+        line-height: 1.6;
+        margin-bottom: 16px;
+        white-space: pre-wrap;
+      }
+      .ss-bg-confirm-buttons {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .ss-bg-confirm-btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .ss-bg-confirm-cancel {
+        background: #f5f5f5;
+        color: #333;
+      }
+      .ss-bg-confirm-cancel:hover {
+        background: #e0e0e0;
+      }
+      .ss-bg-confirm-ok {
+        background: #4CAF50;
+        color: white;
+      }
+      .ss-bg-confirm-ok:hover {
+        background: #45a049;
+      }
+    `;
+
+    // ダイアログコンテンツを作成
+    const dialogContent = document.createElement('div');
+    dialogContent.className = 'ss-bg-confirm-dialog-content';
+
+    const title = document.createElement('div');
+    title.className = 'ss-bg-confirm-title';
+    title.textContent = '確認';
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'ss-bg-confirm-message';
+    messageEl.textContent = message;
+
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.className = 'ss-bg-confirm-buttons';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-cancel';
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.onclick = () => {
+      closeDialog();
+      resolve(false);
+    };
+
+    const okBtn = document.createElement('button');
+    okBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-ok';
+    okBtn.textContent = 'OK';
+    okBtn.onclick = () => {
+      closeDialog();
+      resolve(true);
+    };
+
+    buttonsContainer.appendChild(cancelBtn);
+    buttonsContainer.appendChild(okBtn);
+
+    dialogContent.appendChild(title);
+    dialogContent.appendChild(messageEl);
+    dialogContent.appendChild(buttonsContainer);
+
+    dialogShadowRoot.appendChild(styleEl);
+    dialogShadowRoot.appendChild(dialogContent);
+    document.body.appendChild(dialogShadowHost);
   });
 }
 
@@ -1040,6 +1269,7 @@ async function handleFillField(payload: { value: string }): Promise<void> {
 async function handleSaveCurrentForm(): Promise<void> {
   const forms = detectForms();
   if (forms.length === 0) {
+    showErrorDialog('フォームが見つかりません');
     return;
   }
 
@@ -1047,6 +1277,7 @@ async function handleSaveCurrentForm(): Promise<void> {
   const formData = captureFormData(forms[0]);
 
   if (!formData.password) {
+    showErrorDialog('パスワードフィールドが見つかりませんでした');
     return;
   }
   
@@ -1071,7 +1302,16 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
     return;
   }
 
-  // URLが登録されていない場合、自動的に追加
+  // URLが登録されていない場合、追加するか確認
+  const shouldAdd = await showConfirmDialog(
+    `このサイト (${normalizedCurrentUrl}) は「${entry.title}」の登録URLに含まれていません。\n\nURLを追加しますか？`
+  );
+
+  if (!shouldAdd) {
+    return;
+  }
+
+  // URLを追加
   const updatedEntry: PasswordEntry = {
     ...entry,
     urls: [...entry.urls, normalizedCurrentUrl],
