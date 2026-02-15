@@ -13,6 +13,9 @@ let dialogContent: HTMLDivElement | null = null;
 let dialogShadowHost: HTMLDivElement | null = null;
 let dialogShadowRoot: ShadowRoot | null = null;
 
+// ダイアログオープン前のフォーカス要素（復元用）
+let activeElementBeforeDialog: HTMLElement | null = null;
+
 // ハイライト要素
 let highlightElements: HTMLDivElement[] = [];
 
@@ -800,6 +803,12 @@ function closeDialog(): void {
   dialogContent = null;
   dialogShadowHost = null;
   dialogShadowRoot = null;
+
+  // フォーカスを復元
+  if (activeElementBeforeDialog && typeof activeElementBeforeDialog.focus === 'function') {
+    activeElementBeforeDialog.focus();
+    activeElementBeforeDialog = null;
+  }
 }
 
 /**
@@ -891,21 +900,20 @@ function removeAllHighlights(): void {
 }
 
 /**
- * エラーダイアログを表示
+ * 既存のダイアログがあれば閉じる
  */
-function showErrorDialog(message: string): void {
-  // 既存のダイアログがあれば閉じる
+function closeExistingDialogIfOpen(): void {
   if (dialogShadowHost) {
     closeDialog();
   }
+}
 
-  // 画面中央に配置
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-
-  // Shadow DOMホストを作成
+/**
+ * ダイアログ用のShadow DOMホストを作成
+ */
+function createDialogHost(hostId: string): void {
   dialogShadowHost = document.createElement('div');
-  dialogShadowHost.id = 'ss-bg-error-dialog-host';
+  dialogShadowHost.id = hostId;
   dialogShadowHost.style.cssText = `
     position: fixed;
     top: 0;
@@ -915,13 +923,88 @@ function showErrorDialog(message: string): void {
     z-index: 2147483647;
     pointer-events: none;
   `;
-
-  // Shadow DOMを作成
   dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
+}
 
-  // CSSを注入
+/**
+ * ダイアログのCSSとコンテンツをレンダリング
+ */
+function renderDialogContent(css: string, contentElement: HTMLElement): void {
   const styleEl = document.createElement('style');
-  styleEl.textContent = `
+  styleEl.textContent = css;
+  dialogShadowRoot.appendChild(styleEl);
+  dialogShadowRoot.appendChild(contentElement);
+  document.body.appendChild(dialogShadowHost);
+
+  // ダイアログオープン前のフォーカス要素を保存
+  activeElementBeforeDialog = document.activeElement as HTMLElement;
+
+  // ダイアログ内の最初のフォーカス可能な要素にフォーカスを移動
+  const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const firstFocusable = contentElement.querySelector(focusableSelector) as HTMLElement;
+  if (firstFocusable) {
+    firstFocusable.focus();
+  }
+
+  // フォーカストラップ（Tabキーでダイアログ内に留める）
+  const focusableElements = contentElement.querySelectorAll(focusableSelector) as NodeListOf<HTMLElement>;
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+
+  const trapFocus = (e: KeyboardEvent): void => {
+    if (e.key !== 'Tab') return;
+
+    if (e.shiftKey) {
+      // Shift+Tab: 最初の要素から最後の要素へ
+      if (document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      }
+    } else {
+      // Tab: 最後の要素から最初の要素へ
+      if (document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+  };
+
+  // キーダウンイベントでフォーカストラップ
+  contentElement.addEventListener('keydown', trapFocus);
+}
+
+/**
+ * エラーダイアログを表示
+ */
+function showErrorDialog(message: string): void {
+  closeExistingDialogIfOpen();
+  createDialogHost('ss-bg-error-dialog-host');
+
+  const dialogContent = document.createElement('div');
+  dialogContent.className = 'ss-bg-error-dialog-content';
+  dialogContent.setAttribute('role', 'dialog');
+  dialogContent.setAttribute('aria-modal', 'true');
+
+  const title = document.createElement('div');
+  title.className = 'ss-bg-error-title';
+  title.id = 'ss-bg-error-dialog-title';
+  title.textContent = 'エラー';
+  dialogContent.setAttribute('aria-labelledby', 'ss-bg-error-dialog-title');
+
+  const messageEl = document.createElement('div');
+  messageEl.className = 'ss-bg-error-message';
+  messageEl.textContent = message;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ss-bg-error-close-btn';
+  closeBtn.textContent = '閉じる';
+  closeBtn.onclick = closeDialog;
+
+  dialogContent.appendChild(title);
+  dialogContent.appendChild(messageEl);
+  dialogContent.appendChild(closeBtn);
+
+  const css = `
     .ss-bg-error-dialog-content {
       position: fixed;
       top: 50%;
@@ -964,30 +1047,7 @@ function showErrorDialog(message: string): void {
     }
   `;
 
-  // ダイアログコンテンツを作成
-  const dialogContent = document.createElement('div');
-  dialogContent.className = 'ss-bg-error-dialog-content';
-
-  const title = document.createElement('div');
-  title.className = 'ss-bg-error-title';
-  title.textContent = 'エラー';
-
-  const messageEl = document.createElement('div');
-  messageEl.className = 'ss-bg-error-message';
-  messageEl.textContent = message;
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'ss-bg-error-close-btn';
-  closeBtn.textContent = '閉じる';
-  closeBtn.onclick = closeDialog;
-
-  dialogContent.appendChild(title);
-  dialogContent.appendChild(messageEl);
-  dialogContent.appendChild(closeBtn);
-
-  dialogShadowRoot.appendChild(styleEl);
-  dialogShadowRoot.appendChild(dialogContent);
-  document.body.appendChild(dialogShadowHost);
+  renderDialogContent(css, dialogContent);
 }
 
 /**
@@ -995,30 +1055,51 @@ function showErrorDialog(message: string): void {
  */
 function showConfirmDialog(message: string): Promise<boolean> {
   return new Promise((resolve) => {
-    // 既存のダイアログがあれば閉じる
-    if (dialogShadowHost) {
+    closeExistingDialogIfOpen();
+    createDialogHost('ss-bg-confirm-dialog-host');
+
+    const dialogContent = document.createElement('div');
+    dialogContent.className = 'ss-bg-confirm-dialog-content';
+    dialogContent.setAttribute('role', 'dialog');
+    dialogContent.setAttribute('aria-modal', 'true');
+
+    const title = document.createElement('div');
+    title.className = 'ss-bg-confirm-title';
+    title.id = 'ss-bg-confirm-dialog-title';
+    title.textContent = '確認';
+    dialogContent.setAttribute('aria-labelledby', 'ss-bg-confirm-dialog-title');
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'ss-bg-confirm-message';
+    messageEl.textContent = message;
+
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.className = 'ss-bg-confirm-buttons';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-cancel';
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.onclick = () => {
       closeDialog();
-    }
+      resolve(false);
+    };
 
-    // Shadow DOMホストを作成
-    dialogShadowHost = document.createElement('div');
-    dialogShadowHost.id = 'ss-bg-confirm-dialog-host';
-    dialogShadowHost.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 2147483647;
-      pointer-events: none;
-    `;
+    const okBtn = document.createElement('button');
+    okBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-ok';
+    okBtn.textContent = 'OK';
+    okBtn.onclick = () => {
+      closeDialog();
+      resolve(true);
+    };
 
-    // Shadow DOMを作成
-    dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
+    buttonsContainer.appendChild(cancelBtn);
+    buttonsContainer.appendChild(okBtn);
 
-    // CSSを注入
-    const styleEl = document.createElement('style');
-    styleEl.textContent = `
+    dialogContent.appendChild(title);
+    dialogContent.appendChild(messageEl);
+    dialogContent.appendChild(buttonsContainer);
+
+    const css = `
       .ss-bg-confirm-dialog-content {
         position: fixed;
         top: 50%;
@@ -1075,47 +1156,7 @@ function showConfirmDialog(message: string): Promise<boolean> {
       }
     `;
 
-    // ダイアログコンテンツを作成
-    const dialogContent = document.createElement('div');
-    dialogContent.className = 'ss-bg-confirm-dialog-content';
-
-    const title = document.createElement('div');
-    title.className = 'ss-bg-confirm-title';
-    title.textContent = '確認';
-
-    const messageEl = document.createElement('div');
-    messageEl.className = 'ss-bg-confirm-message';
-    messageEl.textContent = message;
-
-    const buttonsContainer = document.createElement('div');
-    buttonsContainer.className = 'ss-bg-confirm-buttons';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-cancel';
-    cancelBtn.textContent = 'キャンセル';
-    cancelBtn.onclick = () => {
-      closeDialog();
-      resolve(false);
-    };
-
-    const okBtn = document.createElement('button');
-    okBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-ok';
-    okBtn.textContent = 'OK';
-    okBtn.onclick = () => {
-      closeDialog();
-      resolve(true);
-    };
-
-    buttonsContainer.appendChild(cancelBtn);
-    buttonsContainer.appendChild(okBtn);
-
-    dialogContent.appendChild(title);
-    dialogContent.appendChild(messageEl);
-    dialogContent.appendChild(buttonsContainer);
-
-    dialogShadowRoot.appendChild(styleEl);
-    dialogShadowRoot.appendChild(dialogContent);
-    document.body.appendChild(dialogShadowHost);
+    renderDialogContent(css, dialogContent);
   });
 }
 
