@@ -1,6 +1,6 @@
 <template>
   <div class="popup">
-    <h1>SS-BG</h1>
+    <h1>bg-ss</h1>
     
     <div v-if="error" class="error">
       エラー: {{ error }}
@@ -12,7 +12,7 @@
     
     <!-- 自動入力候補選択（2段階選択） -->
     <div v-else-if="autofillMode === 'select-entry'" class="autofill-selection">
-      <h2>パスワードを選択</h2>
+      <h2>保存済み情報を選択</h2>
       <div class="candidate-list">
         <button 
           v-for="entry in autofillCandidates" 
@@ -180,11 +180,11 @@ async function authenticate(): Promise<void> {
             // 成功したらPopupを閉じる
             setTimeout(() => window.close(), 100);
           } else {
-            console.error('[SS-BG Popup] Failed to show dialog:', result.error);
+            console.error('[bg-ss Popup] Failed to show dialog:', result.error);
             actionError.value = 'ダイアログ表示に失敗しました: ' + result.error;
           }
         } catch (error) {
-          console.error('[SS-BG Popup] Error sending message:', error);
+          console.error('[bg-ss Popup] Error sending message:', error);
           actionError.value = 'メッセージ送信エラー: ' + (error instanceof Error ? error.message : 'Unknown error');
         }
       }
@@ -332,11 +332,11 @@ onMounted(async () => {
         // 成功したらPopupを閉じる
         setTimeout(() => window.close(), 100);
       } else {
-        console.error('[SS-BG Popup onMounted] Failed to show dialog:', result.error);
+        console.error('[bg-ss Popup onMounted] Failed to show dialog:', result.error);
         actionError.value = 'ダイアログ表示に失敗しました: ' + result.error;
       }
     } catch (error) {
-      console.error('[SS-BG Popup onMounted] Error sending message:', error);
+      console.error('[bg-ss Popup onMounted] Error sending message:', error);
       actionError.value = 'メッセージ送信エラー: ' + (error instanceof Error ? error.message : 'Unknown error');
     }
     return;

@@ -19,7 +19,7 @@ describe('Options App', () => {
 
     it('タイトルが表示される', () => {
       const wrapper = mount(App);
-      expect(wrapper.text()).toContain('SS-BG');
+      expect(wrapper.text()).toContain('bg-ss');
     });
   });
 
