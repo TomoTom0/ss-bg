@@ -9,13 +9,11 @@ export default defineManifest({
   
   permissions: [
     'storage',
-    'tabs',
+    'activeTab',
     'downloads',
     'contextMenus',
     'offscreen'
   ],
-  
-  host_permissions: ['<all_urls>'],
   
   background: {
     service_worker: 'src/background/main.ts',

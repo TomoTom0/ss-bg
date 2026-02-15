@@ -13,6 +13,9 @@ let dialogContent: HTMLDivElement | null = null;
 let dialogShadowHost: HTMLDivElement | null = null;
 let dialogShadowRoot: ShadowRoot | null = null;
 
+// ダイアログオープン前のフォーカス要素（復元用）
+let activeElementBeforeDialog: HTMLElement | null = null;
+
 // ハイライト要素
 let highlightElements: HTMLDivElement[] = [];
 
@@ -800,6 +803,12 @@ function closeDialog(): void {
   dialogContent = null;
   dialogShadowHost = null;
   dialogShadowRoot = null;
+
+  // フォーカスを復元
+  if (activeElementBeforeDialog && typeof activeElementBeforeDialog.focus === 'function') {
+    activeElementBeforeDialog.focus();
+    activeElementBeforeDialog = null;
+  }
 }
 
 /**
@@ -883,10 +892,271 @@ function removeAllHighlights(): void {
     }
   });
   highlightElements = [];
-  
+
   // ハイライトクラスを削除
   document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach(el => {
     el.classList.remove(HIGHLIGHT_CLASS);
+  });
+}
+
+/**
+ * 既存のダイアログがあれば閉じる
+ */
+function closeExistingDialogIfOpen(): void {
+  if (dialogShadowHost) {
+    closeDialog();
+  }
+}
+
+/**
+ * ダイアログ用のShadow DOMホストを作成
+ */
+function createDialogHost(hostId: string): void {
+  dialogShadowHost = document.createElement('div');
+  dialogShadowHost.id = hostId;
+  dialogShadowHost.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2147483647;
+    pointer-events: none;
+  `;
+  dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
+}
+
+/**
+ * ダイアログのCSSとコンテンツをレンダリング
+ */
+function renderDialogContent(css: string, contentElement: HTMLElement): void {
+  const styleEl = document.createElement('style');
+  styleEl.textContent = css;
+  dialogShadowRoot.appendChild(styleEl);
+  dialogShadowRoot.appendChild(contentElement);
+  document.body.appendChild(dialogShadowHost);
+
+  // ダイアログオープン前のフォーカス要素を保存
+  activeElementBeforeDialog = document.activeElement as HTMLElement;
+
+  // ダイアログ内の最初のフォーカス可能な要素にフォーカスを移動
+  const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const firstFocusable = contentElement.querySelector(focusableSelector) as HTMLElement;
+  if (firstFocusable) {
+    firstFocusable.focus();
+  }
+
+  // フォーカストラップ（Tabキーでダイアログ内に留める）
+  const focusableElements = contentElement.querySelectorAll(focusableSelector) as NodeListOf<HTMLElement>;
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+
+  const trapFocus = (e: KeyboardEvent): void => {
+    if (e.key !== 'Tab') return;
+
+    if (e.shiftKey) {
+      // Shift+Tab: 最初の要素から最後の要素へ
+      if (document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      }
+    } else {
+      // Tab: 最後の要素から最初の要素へ
+      if (document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+  };
+
+  // キーダウンイベントでフォーカストラップ
+  contentElement.addEventListener('keydown', trapFocus);
+}
+
+/**
+ * エラーダイアログを表示
+ */
+function showErrorDialog(message: string): void {
+  closeExistingDialogIfOpen();
+  createDialogHost('ss-bg-error-dialog-host');
+
+  const dialogContent = document.createElement('div');
+  dialogContent.className = 'ss-bg-error-dialog-content';
+  dialogContent.setAttribute('role', 'dialog');
+  dialogContent.setAttribute('aria-modal', 'true');
+
+  const title = document.createElement('div');
+  title.className = 'ss-bg-error-title';
+  title.id = 'ss-bg-error-dialog-title';
+  title.textContent = 'エラー';
+  dialogContent.setAttribute('aria-labelledby', 'ss-bg-error-dialog-title');
+
+  const messageEl = document.createElement('div');
+  messageEl.className = 'ss-bg-error-message';
+  messageEl.textContent = message;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ss-bg-error-close-btn';
+  closeBtn.textContent = '閉じる';
+  closeBtn.onclick = closeDialog;
+
+  dialogContent.appendChild(title);
+  dialogContent.appendChild(messageEl);
+  dialogContent.appendChild(closeBtn);
+
+  const css = `
+    .ss-bg-error-dialog-content {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border: 1px solid #d32f2f;
+      border-radius: 4px;
+      padding: 16px;
+      min-width: 280px;
+      max-width: 400px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      pointer-events: auto;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    .ss-bg-error-title {
+      color: #d32f2f;
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+    .ss-bg-error-message {
+      color: #333;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    .ss-bg-error-close-btn {
+      width: 100%;
+      padding: 8px;
+      background: #f5f5f5;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #333;
+    }
+    .ss-bg-error-close-btn:hover {
+      background: #e0e0e0;
+    }
+  `;
+
+  renderDialogContent(css, dialogContent);
+}
+
+/**
+ * 確認ダイアログを表示
+ */
+function showConfirmDialog(message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    closeExistingDialogIfOpen();
+    createDialogHost('ss-bg-confirm-dialog-host');
+
+    const dialogContent = document.createElement('div');
+    dialogContent.className = 'ss-bg-confirm-dialog-content';
+    dialogContent.setAttribute('role', 'dialog');
+    dialogContent.setAttribute('aria-modal', 'true');
+
+    const title = document.createElement('div');
+    title.className = 'ss-bg-confirm-title';
+    title.id = 'ss-bg-confirm-dialog-title';
+    title.textContent = '確認';
+    dialogContent.setAttribute('aria-labelledby', 'ss-bg-confirm-dialog-title');
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'ss-bg-confirm-message';
+    messageEl.textContent = message;
+
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.className = 'ss-bg-confirm-buttons';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-cancel';
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.onclick = () => {
+      closeDialog();
+      resolve(false);
+    };
+
+    const okBtn = document.createElement('button');
+    okBtn.className = 'ss-bg-confirm-btn ss-bg-confirm-ok';
+    okBtn.textContent = 'OK';
+    okBtn.onclick = () => {
+      closeDialog();
+      resolve(true);
+    };
+
+    buttonsContainer.appendChild(cancelBtn);
+    buttonsContainer.appendChild(okBtn);
+
+    dialogContent.appendChild(title);
+    dialogContent.appendChild(messageEl);
+    dialogContent.appendChild(buttonsContainer);
+
+    const css = `
+      .ss-bg-confirm-dialog-content {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 16px;
+        min-width: 300px;
+        max-width: 450px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        pointer-events: auto;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+      }
+      .ss-bg-confirm-title {
+        font-weight: 600;
+        margin-bottom: 12px;
+        font-size: 16px;
+        color: #333;
+      }
+      .ss-bg-confirm-message {
+        color: #333;
+        line-height: 1.6;
+        margin-bottom: 16px;
+        white-space: pre-wrap;
+      }
+      .ss-bg-confirm-buttons {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .ss-bg-confirm-btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .ss-bg-confirm-cancel {
+        background: #f5f5f5;
+        color: #333;
+      }
+      .ss-bg-confirm-cancel:hover {
+        background: #e0e0e0;
+      }
+      .ss-bg-confirm-ok {
+        background: #4CAF50;
+        color: white;
+      }
+      .ss-bg-confirm-ok:hover {
+        background: #45a049;
+      }
+    `;
+
+    renderDialogContent(css, dialogContent);
   });
 }
 
@@ -1040,15 +1310,15 @@ async function handleFillField(payload: { value: string }): Promise<void> {
 async function handleSaveCurrentForm(): Promise<void> {
   const forms = detectForms();
   if (forms.length === 0) {
-    alert('フォームが見つかりません');
+    showErrorDialog('フォームが見つかりません');
     return;
   }
-  
+
   // 最初のフォームを対象にする（複数ある場合は後で選択できるようにする）
   const formData = captureFormData(forms[0]);
-  
+
   if (!formData.password) {
-    alert('パスワードフィールドが見つかりませんでした');
+    showErrorDialog('パスワードフィールドが見つかりませんでした');
     return;
   }
   
@@ -1074,30 +1344,32 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
   }
 
   // URLが登録されていない場合、追加するか確認
-  const shouldAdd = confirm(
+  const shouldAdd = await showConfirmDialog(
     `このサイト (${normalizedCurrentUrl}) は「${entry.title}」の登録URLに含まれていません。\n\nURLを追加しますか？`
   );
 
-  if (shouldAdd) {
-    // URLを追加
-    const updatedEntry: PasswordEntry = {
-      ...entry,
-      urls: [...entry.urls, normalizedCurrentUrl],
-      updatedAt: Date.now()
-    };
+  if (!shouldAdd) {
+    return;
+  }
 
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'SAVE_PASSWORD',
-        payload: updatedEntry
-      });
+  // URLを追加
+  const updatedEntry: PasswordEntry = {
+    ...entry,
+    urls: [...entry.urls, normalizedCurrentUrl],
+    updatedAt: Date.now()
+  };
 
-      if (response.success) {
-        // URL added successfully
-      }
-    } catch (error) {
-      console.error('[SS-BG] Error adding URL:', error);
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SAVE_PASSWORD',
+      payload: updatedEntry
+    });
+
+    if (response.success) {
+      // URL added successfully
     }
+  } catch (error) {
+    console.error('[SS-BG] Error adding URL:', error);
   }
 }
 
