@@ -3,16 +3,13 @@ import pkg from './package.json';
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'SS-BG',
+  name: 'bg-ss',
   version: pkg.version,
   description: pkg.description,
   
   permissions: [
     'storage',
-    'unlimitedStorage',
-    'activeTab',
     'tabs',
-    'scripting',
     'downloads',
     'contextMenus',
     'offscreen'
@@ -54,8 +51,8 @@ export default defineManifest({
     'take-screenshot': {
       description: 'スクリーンショットを撮影'
     },
-    'autofill-password': {
-      description: 'パスワードを自動入力'
+    'autofill-forms': {
+      description: 'フォームに情報を入力'
     }
   }
 });

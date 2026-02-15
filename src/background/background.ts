@@ -395,7 +395,7 @@ async function handleDeletePassword(payload: { id: string }): Promise<Response> 
  */
 async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promise<Response> {
   if (!isSessionValid(currentSession)) {
-    console.error('[SS-BG] Session is not valid');
+    console.error('[bg-ss] Session is not valid');
     return { success: false, error: 'Session expired' };
   }
   

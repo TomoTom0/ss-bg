@@ -62,3 +62,9 @@ CLAUDE.md
 # Test files
 test-*.html
 check-dialog.js
+
+# Git check script
+.gitignore.check
+
+# Store landing HTML (not needed, using Markdown)
+store-landing/

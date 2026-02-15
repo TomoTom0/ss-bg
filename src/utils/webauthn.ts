@@ -1,7 +1,7 @@
 import { storage } from './storage';
 import type { Session } from '@/types/session';
 
-const RP_NAME = 'SS-BG Password Manager';
+const RP_NAME = 'bg-ss';
 const APP_SALT = new Uint8Array(32).fill(0x55); // 固定salt（アプリケーション固有）
 const HKDF_SALT = new Uint8Array(32).fill(0xAA); // HKDF用salt
 const HKDF_INFO = new TextEncoder().encode('ss-bg-encryption-key-v1');
@@ -45,8 +45,8 @@ export async function registerCredential(): Promise<PublicKeyCredential> {
       },
       user: {
         id: userId,
-        name: 'user@ss-bg',
-        displayName: 'SS-BG User'
+        name: 'user@bg-ss',
+        displayName: 'bg-ss User'
       },
       pubKeyCredParams: [
         { type: 'public-key', alg: -7 },   // ES256

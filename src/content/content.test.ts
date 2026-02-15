@@ -203,9 +203,9 @@ describe('content script', () => {
     it('console.errorでエラーがログ出力される', () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      console.error('[SS-BG] Test error');
+      console.error('[bg-ss] Test error');
 
-      expect(consoleSpy).toHaveBeenCalledWith('[SS-BG] Test error');
+      expect(consoleSpy).toHaveBeenCalledWith('[bg-ss] Test error');
 
       consoleSpy.mockRestore();
     });

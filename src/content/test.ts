@@ -15,5 +15,5 @@ testDiv.style.cssText = `
   z-index: 9999999;
   border: 3px solid black;
 `;
-testDiv.textContent = 'SS-BG LOADED';
+testDiv.textContent = 'bg-ss LOADED';
 document.body.appendChild(testDiv);

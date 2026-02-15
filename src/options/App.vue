@@ -1,6 +1,6 @@
 <template>
   <div class="options">
-    <h1>SS-BG 設定</h1>
+    <h1>bg-ss 設定</h1>
     
     <div v-if="error" class="error">
       エラー: {{ error }}
@@ -19,18 +19,18 @@
           <button @click="lockSession" class="btn btn-warning">セッションをロック</button>
         </div>
         <div v-else class="not-authenticated">
-          <p class="status-warning">未認証（パスワード管理には認証が必要です）</p>
+          <p class="status-warning">未認証（情報の管理には認証が必要です）</p>
           <button @click="authenticate" class="btn btn-primary">認証する</button>
           <div v-if="authError" class="error">{{ authError }}</div>
         </div>
       </section>
       
-      <!-- パスワード一覧 -->
+      <!-- 保存済み情報一覧 -->
       <section class="section">
-        <h2>パスワード一覧</h2>
-        
+        <h2>保存済み情報</h2>
+
         <div v-if="!isAuthenticated" class="auth-required">
-          <p>パスワード管理機能を使用するには認証が必要です</p>
+          <p>情報管理機能を使用するには認証が必要です</p>
         </div>
         
         <template v-else>
@@ -39,7 +39,7 @@
           </button>
           
           <div v-if="passwords.length === 0" class="empty">
-            パスワードがありません
+            保存済み情報がありません
           </div>
           
           <div v-else class="password-list">
@@ -73,10 +73,10 @@
         </template>
       </section>
       
-      <!-- パスワード追加/編集フォーム -->
+      <!-- 情報追加/編集フォーム -->
       <div v-if="showAddForm || editingEntry" class="modal">
         <div class="modal-content">
-          <h3>{{ editingEntry ? 'パスワード編集' : 'パスワード追加' }}</h3>
+          <h3>{{ editingEntry ? '情報編集' : '情報追加' }}</h3>
           
           <div class="form-group">
             <label>タイトル</label>

@@ -18,14 +18,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 chrome.contextMenus.removeAll(() => {
   chrome.contextMenus.create({
     id: 'ss-bg-root',
-    title: 'SS-BG パスワード管理',
+    title: 'bg-ss',
     contexts: ['editable']
   });
-  
+
   chrome.contextMenus.create({
-    id: 'autofill-password',
+    id: 'autofill-forms',
     parentId: 'ss-bg-root',
-    title: 'パスワードを入力...',
+    title: '情報を入力...',
     contexts: ['editable']
   });
   
@@ -49,7 +49,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  if (info.menuItemId === 'autofill-password') {
+  if (info.menuItemId === 'autofill-forms') {
     // セッション状態を確認
     const sessionStatus = await handleMessage({ type: 'GET_SESSION_STATUS' });
 
@@ -77,7 +77,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'take-screenshot') {
     await handleMessage({ type: 'TAKE_SCREENSHOT' });
-  } else if (command === 'autofill-password') {
+  } else if (command === 'autofill-forms') {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id) {
@@ -121,7 +121,7 @@ async function showPasswordDialog(tabId: number) {
         }
       });
     } catch (error) {
-      console.error('[SS-BG] Failed to send message to content script:', error);
+      console.error('[bg-ss] Failed to send message to content script:', error);
     }
   }
 }

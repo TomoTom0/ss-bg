@@ -25,9 +25,14 @@ docs/
 │   ├── decision/    # 技術的決定事項（ADR）
 │   ├── detailed/     # 詳細設計
 │   └── initial/      # 初期設計
-└── research/        # 技術調査レポート
+├── research/        # 技術調査レポート
+└── chrome-store/    # Chrome Web Store掲載用ドキュメント
+    ├── README.md           # ストア掲載用テキスト
+    ├── store-listing.md    # 掲載情報・権限説明・プライバシー実践宣言
+    └── privacy-policy.md   # プライバシーポリシー
 ```
 
 ## 更新履歴
 
+- 2026-02-15: Chrome Web Store掲載用ドキュメントを追加
 - 2026-02-06: console.log削除対応 - テスト環境の修正、グローバルセットアップファイルの作成
