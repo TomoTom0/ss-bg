@@ -1040,15 +1040,13 @@ async function handleFillField(payload: { value: string }): Promise<void> {
 async function handleSaveCurrentForm(): Promise<void> {
   const forms = detectForms();
   if (forms.length === 0) {
-    alert('フォームが見つかりません');
     return;
   }
-  
+
   // 最初のフォームを対象にする（複数ある場合は後で選択できるようにする）
   const formData = captureFormData(forms[0]);
-  
+
   if (!formData.password) {
-    alert('パスワードフィールドが見つかりませんでした');
     return;
   }
   
