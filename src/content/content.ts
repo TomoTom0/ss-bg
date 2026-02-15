@@ -1071,31 +1071,24 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
     return;
   }
 
-  // URLが登録されていない場合、追加するか確認
-  const shouldAdd = confirm(
-    `このサイト (${normalizedCurrentUrl}) は「${entry.title}」の登録URLに含まれていません。\n\nURLを追加しますか？`
-  );
+  // URLが登録されていない場合、自動的に追加
+  const updatedEntry: PasswordEntry = {
+    ...entry,
+    urls: [...entry.urls, normalizedCurrentUrl],
+    updatedAt: Date.now()
+  };
 
-  if (shouldAdd) {
-    // URLを追加
-    const updatedEntry: PasswordEntry = {
-      ...entry,
-      urls: [...entry.urls, normalizedCurrentUrl],
-      updatedAt: Date.now()
-    };
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SAVE_PASSWORD',
+      payload: updatedEntry
+    });
 
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'SAVE_PASSWORD',
-        payload: updatedEntry
-      });
-
-      if (response.success) {
-        // URL added successfully
-      }
-    } catch (error) {
-      console.error('[SS-BG] Error adding URL:', error);
+    if (response.success) {
+      // URL added successfully
     }
+  } catch (error) {
+    console.error('[SS-BG] Error adding URL:', error);
   }
 }
 
