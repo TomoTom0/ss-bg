@@ -1,6 +1,6 @@
 <template>
   <div class="options">
-    <h1>SS-BG 設定</h1>
+    <h1>bg-ss 設定</h1>
     
     <div v-if="error" class="error">
       エラー: {{ error }}
@@ -19,18 +19,18 @@
           <button @click="lockSession" class="btn btn-warning">セッションをロック</button>
         </div>
         <div v-else class="not-authenticated">
-          <p class="status-warning">未認証（パスワード管理には認証が必要です）</p>
+          <p class="status-warning">未認証（情報の管理には認証が必要です）</p>
           <button @click="authenticate" class="btn btn-primary">認証する</button>
           <div v-if="authError" class="error">{{ authError }}</div>
         </div>
       </section>
       
-      <!-- パスワード一覧 -->
+      <!-- 保存済み情報一覧 -->
       <section class="section">
-        <h2>パスワード一覧</h2>
-        
+        <h2>保存済み情報</h2>
+
         <div v-if="!isAuthenticated" class="auth-required">
-          <p>パスワード管理機能を使用するには認証が必要です</p>
+          <p>情報管理機能を使用するには認証が必要です</p>
         </div>
         
         <template v-else>
@@ -39,7 +39,7 @@
           </button>
           
           <div v-if="passwords.length === 0" class="empty">
-            パスワードがありません
+            保存済み情報がありません
           </div>
           
           <div v-else class="password-list">
@@ -55,6 +55,14 @@
                   </button>
                 </div>
                 <p class="urls">URL: {{ entry.urls.join(', ') }}</p>
+                <div v-if="entry.additionalFields && entry.additionalFields.length > 0" class="additional-fields-info">
+                  <p class="additional-fields-label">追加フィールド:</p>
+                  <ul class="additional-fields-items">
+                    <li v-for="(field, index) in entry.additionalFields" :key="index">
+                      {{ field.name }}: {{ field.value }}
+                    </li>
+                  </ul>
+                </div>
               </div>
               <div class="password-actions">
                 <button @click="editEntry(entry)" class="btn btn-sm">編集</button>
@@ -65,10 +73,10 @@
         </template>
       </section>
       
-      <!-- パスワード追加/編集フォーム -->
+      <!-- 情報追加/編集フォーム -->
       <div v-if="showAddForm || editingEntry" class="modal">
         <div class="modal-content">
-          <h3>{{ editingEntry ? 'パスワード編集' : 'パスワード追加' }}</h3>
+          <h3>{{ editingEntry ? '情報編集' : '情報追加' }}</h3>
           
           <div class="form-group">
             <label>タイトル</label>
@@ -88,6 +96,40 @@
           <div class="form-group">
             <label>URL（複数の場合は改行区切り）</label>
             <textarea v-model="formData.urlsText" rows="3"></textarea>
+          </div>
+          
+          <!-- 追加フィールド -->
+          <div class="form-group">
+            <label>追加フィールド</label>
+            <div v-if="formData.additionalFields.length === 0" class="empty-fields">
+              追加フィールドはありません
+            </div>
+            <div v-else class="additional-fields-list">
+              <div v-for="(field, index) in formData.additionalFields" :key="index" class="field-row">
+                <div class="field-inputs">
+                  <input 
+                    v-model="field.name" 
+                    type="text" 
+                    placeholder="フィールド名（例：電話番号）"
+                    class="field-name-input"
+                  />
+                  <input 
+                    v-model="field.value" 
+                    type="text" 
+                    placeholder="値"
+                    class="field-value-input"
+                  />
+                  <input 
+                    v-model="field.selector" 
+                    type="text" 
+                    placeholder="セレクタ（省略可）"
+                    class="field-selector-input"
+                  />
+                </div>
+                <button @click="removeAdditionalField(index)" class="btn-remove" title="削除">×</button>
+              </div>
+            </div>
+            <button @click="addAdditionalField" class="btn btn-sm btn-add-field">+ フィールドを追加</button>
           </div>
           
           <div class="form-actions">
@@ -114,22 +156,41 @@
       <!-- 設定 -->
       <section class="section">
         <h2>設定</h2>
-        
+
         <div class="form-group">
-          <label>セッションタイムアウト (分)</label>
-          <input v-model.number="settings.sessionTimeout" type="number" min="1" max="120" />
+          <label>セッションタイムアウト</label>
+          <select v-model.number="settings.sessionTimeout" class="select-input">
+            <option v-for="option in sessionTimeoutOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
         </div>
-        
+
+        <h3>スクリーンショット</h3>
         <div class="form-group">
           <label>
-            <input v-model="settings.autoLock" type="checkbox" />
-            自動ロック
+            <input v-model="settings.screenshotCopyToClipboard" type="checkbox" />
+            クリップボードにコピー
           </label>
         </div>
-        
+        <div class="form-group">
+          <label>
+            <input v-model="settings.screenshotDownloadImage" type="checkbox" />
+            画像をダウンロード
+          </label>
+        </div>
+
         <button @click="saveSettings" class="btn btn-primary">設定を保存</button>
-        
+
         <div v-if="settingsSaved" class="success">設定を保存しました</div>
+
+        <div class="form-group" style="margin-top: 20px;">
+          <label>キーボードショートカット</label>
+          <p style="font-size: 12px; color: #666; margin: 4px 0;">
+            パスワード自動入力のキーボードショートカットを設定できます
+          </p>
+          <button @click="openKeyboardShortcuts" class="btn btn-secondary">キーボードショートカットを設定</button>
+        </div>
       </section>
       
       <!-- 開発用：データクリア -->
@@ -150,15 +211,25 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import type { Message, Response } from '@/types/message';
-import type { PasswordEntry, Settings } from '@/types/storage';
+import type { PasswordEntry, AppSettings } from '@/types/storage';
 import { registerCredential, authenticate as webauthnAuthenticate } from '@/utils/webauthn';
 import { storage } from '@/utils/storage';
+import { normalizeUrl } from '@/utils/url-matcher';
 
 const passwords = ref<PasswordEntry[]>([]);
-const settings = ref<Settings>({
+const settings = ref<AppSettings>({
   sessionTimeout: 30,
-  autoLock: true
+  screenshotCopyToClipboard: true,
+  screenshotDownloadImage: true
 });
+
+const sessionTimeoutOptions = [
+  { value: 5, label: '5分' },
+  { value: 15, label: '15分' },
+  { value: 30, label: '30分' },
+  { value: 60, label: '60分' },
+  { value: 120, label: '120分' }
+];
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -172,12 +243,41 @@ const showAddForm = ref(false);
 const editingEntry = ref<PasswordEntry | null>(null);
 const deletingEntry = ref<PasswordEntry | null>(null);
 
-const formData = ref({
+const formData = ref<{
+  title: string;
+  username: string;
+  password: string;
+  urlsText: string;
+  additionalFields: Array<{ name: string; value: string; selector: string }>;
+}>({
   title: '',
   username: '',
   password: '',
-  urlsText: ''
+  urlsText: '',
+  additionalFields: []
 });
+
+// パスワード表示状態を管理
+const visiblePasswordIds = ref<Set<string>>(new Set());
+
+function togglePasswordVisibility(id: string): void {
+  if (visiblePasswordIds.value.has(id)) {
+    visiblePasswordIds.value.delete(id);
+  } else {
+    visiblePasswordIds.value.add(id);
+  }
+}
+
+function isPasswordVisible(id: string): boolean {
+  return visiblePasswordIds.value.has(id);
+}
+
+function getPasswordDisplay(id: string): string {
+  const entry = passwords.value.find(p => p.id === id);
+  if (!entry) return '';
+  
+  return isPasswordVisible(id) ? entry.password : '••••••••';
+}
 
 async function sendMessage(message: Message): Promise<Response> {
   return chrome.runtime.sendMessage(message);
@@ -277,22 +377,25 @@ async function clearAllData(): Promise<void> {
 }
 
 async function loadPasswords(): Promise<void> {
+  // 未認証の場合はパスワード読み込みをスキップ
+  if (!isAuthenticated.value) {
+    passwords.value = [];
+    return;
+  }
+  
   try {
     const response = await sendMessage({ type: 'GET_PASSWORDS' });
     if (response.success) {
       passwords.value = response.data || [];
     } else {
-      // 認証エラーの場合は空配列を設定してエラーを表示しない
-      if (response.error?.includes('Session expired') || response.error?.includes('authenticate')) {
-        passwords.value = [];
-      } else {
-        error.value = response.error || 'パスワード取得に失敗しました';
-      }
+      // 認証エラーまたは復号化エラーの場合は空配列を設定
+      passwords.value = [];
+      console.error('Failed to load passwords:', response.error);
+      // エラーを表示せず、ログに記録するのみ
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'エラーが発生しました';
-  } finally {
-    loading.value = false;
+    passwords.value = [];
+    console.error('Error loading passwords:', e);
   }
 }
 
@@ -313,7 +416,8 @@ function editEntry(entry: PasswordEntry): void {
     title: entry.title,
     username: entry.username,
     password: entry.password,
-    urlsText: entry.urls.join('\n')
+    urlsText: entry.urls.join('\n'),
+    additionalFields: entry.additionalFields ? [...entry.additionalFields] : []
   };
 }
 
@@ -325,44 +429,70 @@ function cancelEdit(): void {
     title: '',
     username: '',
     password: '',
-    urlsText: ''
+    urlsText: '',
+    additionalFields: []
   };
+}
+
+function addAdditionalField(): void {
+  formData.value.additionalFields.push({
+    name: '',
+    value: '',
+    selector: ''
+  });
+}
+
+function removeAdditionalField(index: number): void {
+  formData.value.additionalFields.splice(index, 1);
 }
 
 async function saveEntry(): Promise<void> {
   formError.value = null;
-  
-  if (!formData.value.title || !formData.value.username || !formData.value.password) {
-    formError.value = '全てのフィールドを入力してください';
+
+  if (!formData.value.username || !formData.value.password) {
+    formError.value = 'ユーザー名とパスワードは必須です';
     return;
   }
-  
+
+  // URLを正規化（空を許容）
   const urls = formData.value.urlsText
     .split('\n')
-    .map(url => url.trim())
+    .map(url => normalizeUrl(url))
     .filter(url => url.length > 0);
-  
-  if (urls.length === 0) {
-    formError.value = '少なくとも1つのURLを入力してください';
-    return;
+
+  // titleが空の場合の処理
+  let title = formData.value.title.trim();
+  if (!title) {
+    if (urls.length > 0) {
+      // 最初のURLをtitleにする
+      title = urls[0];
+    } else {
+      // URLも空の場合は現在時刻をtitleにする
+      title = new Date().toLocaleString('ja-JP');
+    }
   }
-  
+
   const entry: PasswordEntry = {
     id: editingEntry.value?.id || Date.now().toString(),
-    title: formData.value.title,
+    title,
     username: formData.value.username,
     password: formData.value.password,
     urls,
     createdAt: editingEntry.value?.createdAt || Date.now(),
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    usernameSelector: editingEntry.value?.usernameSelector,
+    passwordSelector: editingEntry.value?.passwordSelector,
+    additionalFields: formData.value.additionalFields.length > 0
+      ? formData.value.additionalFields.filter(f => f.name && f.value)
+      : undefined
   };
-  
+
   try {
     const response = await sendMessage({
       type: 'SAVE_PASSWORD',
       payload: entry
     });
-    
+
     if (response.success) {
       await loadPasswords();
       cancelEdit();
@@ -400,13 +530,13 @@ async function deleteEntry(): Promise<void> {
 
 async function saveSettings(): Promise<void> {
   settingsSaved.value = false;
-  
+
   try {
     const response = await sendMessage({
       type: 'UPDATE_SETTINGS',
       payload: settings.value
     });
-    
+
     if (response.success) {
       settingsSaved.value = true;
       setTimeout(() => {
@@ -420,10 +550,37 @@ async function saveSettings(): Promise<void> {
   }
 }
 
+function openKeyboardShortcuts(): void {
+  chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+}
+
 onMounted(async () => {
   await checkSessionStatus();
-  await loadPasswords();
   await loadSettings();
+  // パスワード読み込みは認証済みの場合のみ
+  if (isAuthenticated.value) {
+    await loadPasswords();
+  }
+  
+  // フォームデータが保存されている場合は自動的にフォームを開く
+  const sessionData = await chrome.storage.session.get(['capturedFormData']);
+  if (sessionData.capturedFormData) {
+    const capturedData = sessionData.capturedFormData;
+    // セッションストレージからクリア
+    await chrome.storage.session.remove(['capturedFormData']);
+    
+    // フォームに反映
+    showAddForm.value = true;
+    formData.value = {
+      title: capturedData.title || '',
+      username: capturedData.username || '',
+      password: capturedData.password || '',
+      urlsText: capturedData.urls ? capturedData.urls.join('\n') : '',
+      additionalFields: capturedData.additionalFields || []
+    };
+  }
+  
+  loading.value = false;
 });
 </script>
 
@@ -643,6 +800,15 @@ h2 {
   background: #da190b;
 }
 
+.btn-secondary {
+  background: #2196F3;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #1976D2;
+}
+
 .btn-sm {
   padding: 6px 12px;
   font-size: 13px;
@@ -694,9 +860,120 @@ h2 {
   margin-right: 8px;
 }
 
+.select-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+
 .form-actions {
   display: flex;
   gap: 8px;
   margin-top: 16px;
+}
+
+.additional-fields-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.field-inputs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-name-input,
+.field-value-input,
+.field-selector-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.field-name-input {
+  font-weight: 600;
+}
+
+.field-selector-input {
+  font-size: 11px;
+  color: #666;
+  font-family: monospace;
+}
+
+.btn-remove {
+  padding: 6px 10px;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  height: fit-content;
+}
+
+.btn-remove:hover {
+  background: #da190b;
+}
+
+.btn-add-field {
+  width: 100%;
+  margin-top: 4px;
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.btn-add-field:hover {
+  background: #bbdefb;
+}
+
+.empty-fields {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.additional-fields-info {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+}
+
+.additional-fields-label {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  color: #666;
+  font-weight: 600;
+}
+
+.additional-fields-items {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: #666;
+}
+
+.additional-fields-items li {
+  margin: 2px 0;
 }
 </style>

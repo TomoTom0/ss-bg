@@ -28,8 +28,9 @@ export interface PasswordEntry {
  */
 export interface AppSettings {
   sessionTimeout: number;  // 分単位（デフォルト: 30）
-  autoLock: boolean;       // アイドル時自動ロック（デフォルト: true）
   prfEnabled?: boolean;    // PRF対応状態
+  screenshotCopyToClipboard: boolean;  // スクリーンショットをクリップボードにコピー（デフォルト: true）
+  screenshotDownloadImage: boolean;     // スクリーンショットをダウンロード（デフォルト: true）
 }
 
 /**

@@ -279,24 +279,26 @@ function matchUrl(currentUrl: string, entryUrls: string[]): number {
 {
   "permissions": [
     "storage",
-    "unlimitedStorage",
     "activeTab",
-    "tabs",
+    "downloads",
+    "contextMenus",
+    "offscreen",
     "scripting"
-  ],
-  "host_permissions": [
-    "<all_urls>"
   ]
 }
 ```
 
 #### 各パーミッションの理由
-- `storage`: Chrome Storage APIへのアクセス
-- `unlimitedStorage`: 大量のパスワードエントリ保存
-- `activeTab`: スクリーンショット撮影
-- `tabs`: タブ情報取得、URL取得
-- `scripting`: Content Script動的注入（必要に応じて）
-- `<all_urls>`: 全てのページでパスワード自動入力機能を提供
+- `storage`: Chrome Storage APIへのアクセス（暗号化データ保存）
+- `activeTab`: ユーザーがアクションを起こしたタブへのアクセス（スクリーンショット、自動入力）
+- `downloads`: スクリーンショットのダウンロード
+- `contextMenus`: 右クリックメニューの追加
+- `offscreen`: オフスクリーン処理（クリップボードコピー等）
+- `scripting`: Content Scriptのオンデマンド注入（ユーザーアクション時のみ実行）
+
+### コンテンツスクリプトの注入方式
+- **オンデマンド注入**: `content_scripts`の`matches`は使用せず、ユーザーアクション時に`chrome.scripting.executeScript`で動的に注入
+- **メリット**: 全ページでの自動実行を回避し、プライバシーを向上
 
 ## 8. 実装フェーズ
 

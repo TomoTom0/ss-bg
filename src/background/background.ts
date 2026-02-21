@@ -1,13 +1,63 @@
 import type { Message, Response } from '@/types/message';
 import type { Session } from '@/types/session';
 import type { PasswordEntry } from '@/types/storage';
-import { authenticate, isSessionValid, registerCredential } from '@/utils/webauthn';
+import { authenticate, isSessionValid } from '@/utils/webauthn';
 import { decrypt, encrypt } from '@/utils/crypto';
 import { storage } from '@/utils/storage';
-import { matchUrls } from '@/utils/url-matcher';
+import { isStringRecord, isAppSettings, isPasswordEntry } from '@/types/message';
 
 // セッション（メモリ上のみ）
 let currentSession: Session | null = null;
+
+/**
+ * コンテンツスクリプトが注入されているか確認し、必要なら注入する
+ */
+export async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
+  const INJECTION_RETRY_ATTEMPTS = 10;
+  const INJECTION_RETRY_DELAY_MS = 100;
+
+  try {
+    const result = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    if (result?.pong) {
+      console.log('[bg-ss] Content script already injected');
+      return true;
+    }
+  } catch (e) {
+    // コンテンツスクリプトが存在しないことを示すエラーメッセージ。これ以外は予期せぬエラー。
+    if (e instanceof Error && e.message.includes('Receiving end does not exist')) {
+      console.log('[bg-ss] Content script not yet injected');
+    } else {
+      console.error('[bg-ss] Failed to check for content script:', e);
+      return false;
+    }
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['assets/content-bundle.js']
+    });
+
+    for (let i = 0; i < INJECTION_RETRY_ATTEMPTS; i++) {
+      await new Promise(resolve => setTimeout(resolve, INJECTION_RETRY_DELAY_MS));
+      try {
+        const result = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+        if (result?.pong) {
+          console.log(`[bg-ss] Content script ready after ${i + 1} retries`);
+          return true;
+        }
+      } catch {
+        // リトライを継続
+      }
+    }
+
+    console.warn('[bg-ss] Content script not ready after retries');
+    return false;
+  } catch (error) {
+    console.error('[bg-ss] Failed to inject content script:', error);
+    return false;
+  }
+}
 
 /**
  * Service Workerの起動時にsession storageからセッションを復元
@@ -15,28 +65,30 @@ let currentSession: Session | null = null;
 async function restoreSession(): Promise<void> {
   try {
     const sessionData = await chrome.storage.session.get(['encryptionKeyJwk', 'credentialId', 'expiresAt', 'isLocked']);
-    
-    if (sessionData.encryptionKeyJwk && sessionData.credentialId) {
+
+    if (isStringRecord(sessionData) &&
+        typeof sessionData.encryptionKeyJwk === 'object' &&
+        sessionData.encryptionKeyJwk !== null &&
+        typeof sessionData.credentialId === 'string') {
       // JWKからCryptoKeyを復元
       const key = await crypto.subtle.importKey(
         'jwk',
-        sessionData.encryptionKeyJwk,
+        sessionData.encryptionKeyJwk as JsonWebKey,
         { name: 'AES-GCM', length: 256 },
         true,
         ['encrypt', 'decrypt']
       );
-      
+
       // Base64からArrayBufferを復元
       const credentialId = base64ToArrayBuffer(sessionData.credentialId);
-      
+
       currentSession = {
         encryptionKey: key,
         credentialId,
-        expiresAt: sessionData.expiresAt || 0,
-        isLocked: sessionData.isLocked || false
+        expiresAt: typeof sessionData.expiresAt === 'number' ? sessionData.expiresAt : 0,
+        isLocked: typeof sessionData.isLocked === 'boolean' ? sessionData.isLocked : false
       };
-      
-      console.log('Session restored from storage');
+
     }
   } catch (error) {
     console.error('Failed to restore session:', error);
@@ -106,15 +158,6 @@ export async function lockSession(): Promise<void> {
 export function getSessionStatus(): { authenticated: boolean; expiresAt?: number } {
   const isValid = isSessionValid(currentSession);
   const now = Date.now();
-  if (currentSession) {
-    console.log('Session check:', {
-      now: new Date(now).toISOString(),
-      expiresAt: new Date(currentSession.expiresAt).toISOString(),
-      isLocked: currentSession.isLocked,
-      timeLeft: Math.round((currentSession.expiresAt - now) / 1000 / 60) + ' minutes',
-      isValid
-    });
-  }
   return {
     authenticated: isValid,
     expiresAt: currentSession?.expiresAt
@@ -128,41 +171,67 @@ export async function handleMessage(message: Message): Promise<Response> {
   try {
     switch (message.type) {
       case 'CREATE_SESSION':
-        return await handleCreateSession(message.payload);
-      
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for CREATE_SESSION' };
+        }
+        return await handleCreateSession(message.payload as {
+          encryptionKey: JsonWebKey;
+          credentialId: string;
+          timeoutMinutes: number;
+        });
+
       case 'AUTHENTICATE':
         return await handleAuthenticate();
-      
+
       case 'GET_PASSWORDS':
         return await handleGetPasswords();
-      
+
       case 'SAVE_PASSWORD':
-        return await handleSavePassword(message.payload);
-      
+        if (!isPasswordEntry(message.payload)) {
+          return { success: false, error: 'Invalid payload for SAVE_PASSWORD' };
+        }
+        return await handleSavePassword(message.payload as PasswordEntry);
+
       case 'UPDATE_PASSWORD':
-        return await handleUpdatePassword(message.payload);
-      
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for UPDATE_PASSWORD' };
+        }
+        return await handleUpdatePassword(message.payload as { id: string; entry: PasswordEntry });
+
       case 'DELETE_PASSWORD':
-        return await handleDeletePassword(message.payload);
-      
-      case 'AUTOFILL_REQUEST':
-        return await handleAutofillRequest(message.payload);
-      
+        if (!isStringRecord(message.payload) || !('id' in message.payload)) {
+          return { success: false, error: 'Invalid payload for DELETE_PASSWORD' };
+        }
+        return await handleDeletePassword(message.payload as { id: string });
+
+      case 'SHOW_PASSWORD_DIALOG_FOR_TAB':
+        // Popupからの要求でダイアログを表示
+        if (!isStringRecord(message.payload) || !('tabId' in message.payload)) {
+          return { success: false, error: 'Invalid payload for SHOW_PASSWORD_DIALOG_FOR_TAB' };
+        }
+        return await handleShowPasswordDialogForTab(message.payload as { tabId: number });
+
       case 'LOCK_SESSION':
         return handleLockSession();
-      
+
       case 'GET_SESSION_STATUS':
         return handleGetSessionStatus();
-      
+
       case 'TAKE_SCREENSHOT':
-        return await handleTakeScreenshot(message.payload);
-      
+        return await handleTakeScreenshot();
+
       case 'GET_SETTINGS':
         return await handleGetSettings();
-      
+
       case 'UPDATE_SETTINGS':
-        return await handleUpdateSettings(message.payload);
-      
+        if (!isAppSettings(message.payload)) {
+          return { success: false, error: 'Invalid payload for UPDATE_SETTINGS' };
+        }
+        return await handleUpdateSettings(message.payload as Partial<Record<string, unknown>>);
+
+      case 'OPEN_OPTIONS_WITH_FORM_DATA':
+        return handleOpenOptionsWithFormData();
+
       default:
         return { success: false, error: 'Unknown message type' };
     }
@@ -194,10 +263,7 @@ async function handleCreateSession(payload: {
     
     // Base64をArrayBufferに変換
     const credentialId = base64ToArrayBuffer(payload.credentialId);
-    
-    console.log('Creating session with timeout:', payload.timeoutMinutes, 'minutes');
-    console.log('Session will expire at:', new Date(Date.now() + payload.timeoutMinutes * 60 * 1000).toISOString());
-    
+
     await createSession(key, credentialId, payload.timeoutMinutes);
     
     return { success: true };
@@ -223,13 +289,14 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
  */
 async function handleAuthenticate(): Promise<Response> {
   try {
-    const { key, credentialId } = await authenticate();
-    
     const settings = await storage.getSettings();
+
+    const { key, credentialId } = await authenticate();
+
     const timeout = settings.sessionTimeout || 30;
-    
+
     await createSession(key, credentialId, timeout);
-    
+
     return { success: true };
   } catch (error) {
     return {
@@ -246,18 +313,27 @@ async function handleGetPasswords(): Promise<Response> {
   if (!isSessionValid(currentSession)) {
     return { success: false, error: 'Session expired. Please authenticate.' };
   }
-  
+
   try {
     const encryptedData = await storage.getEncryptedPasswords();
+
     if (!encryptedData) {
       return { success: true, data: [] };
     }
-    
+
     const decryptedJson = await decrypt(encryptedData, currentSession!.encryptionKey);
     const passwords = JSON.parse(decryptedJson);
-    
+
     return { success: true, data: passwords };
   } catch (error) {
+    // 復号化エラーの場合、詳細情報を提供
+    if (error instanceof Error && error.name === 'OperationError') {
+      return {
+        success: false,
+        error: 'Decryption failed. The encryption key may have changed. Please reset the extension data from settings.'
+      };
+    }
+
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get passwords'
@@ -365,45 +441,43 @@ async function handleDeletePassword(payload: { id: string }): Promise<Response> 
 }
 
 /**
- * 自動入力リクエスト
+ * タブにパスワードダイアログを表示
  */
-async function handleAutofillRequest(payload: { url: string; tabId: number }): Promise<Response> {
+async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promise<Response> {
   if (!isSessionValid(currentSession)) {
-    // 未認証の場合、Popupを開いて認証を促す
-    await chrome.action.openPopup();
-    return { success: false, error: 'Authentication required. Please authenticate in the popup.' };
+    console.error('[bg-ss] Session is not valid');
+    return { success: false, error: 'Session expired' };
   }
-  
-  const passwordsResponse = await handleGetPasswords();
-  if (!passwordsResponse.success) {
-    return passwordsResponse;
+
+  // コンテンツスクリプトが注入されているか確認
+  const injected = await ensureContentScriptInjected(payload.tabId);
+  if (!injected) {
+    console.error('[bg-ss] Failed to inject content script');
+    return { success: false, error: 'Failed to inject content script' };
   }
-  
-  const passwords = passwordsResponse.data as PasswordEntry[];
-  const matches = matchUrls(payload.url, passwords);
-  
-  if (matches.length === 0) {
-    return { success: false, error: 'No matching passwords found for this URL' };
-  }
-  
-  // 候補が1つの場合は自動的に入力
-  if (matches.length === 1) {
+
+  try {
+    const passwordsResponse = await handleGetPasswords();
+    if (!passwordsResponse.success) {
+      return passwordsResponse;
+    }
+    const passwords = (passwordsResponse.data as PasswordEntry[]) || [];
+
     await chrome.tabs.sendMessage(payload.tabId, {
-      type: 'FILL_PASSWORD',
-      payload: matches[0]
+      type: 'SHOW_PASSWORD_DIALOG',
+      payload: {
+        candidates: passwords,
+        tabId: payload.tabId
+      }
     });
+
     return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to show password dialog'
+    };
   }
-  
-  // 複数候補がある場合は選択UIを表示
-  // chrome.storageに候補を保存してPopupで表示
-  await chrome.storage.session.set({
-    autofillCandidates: matches,
-    autofillTabId: payload.tabId
-  });
-  
-  await chrome.action.openPopup();
-  return { success: true, data: { needsSelection: true, count: matches.length } };
 }
 
 /**
@@ -423,33 +497,36 @@ function handleGetSessionStatus(): Response {
 }
 
 /**
- * スクリーンショット撮影
+ * スクリーンショット撮影（ウィンドウのコンテンツ部分）
  */
-async function handleTakeScreenshot(payload: { crop: boolean }): Promise<Response> {
+async function handleTakeScreenshot(): Promise<Response> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+
     if (!tab || !tab.windowId) {
       return { success: false, error: 'No active tab found' };
     }
-    
+
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
       format: 'png'
     });
-    
-    if (payload.crop) {
-      // トリミングUIを表示（Phase 3で実装）
-      // TODO: implement cropping UI
+
+    const settings = await storage.getSettings();
+
+    if (settings.screenshotCopyToClipboard) {
+      await copyToClipboard(dataUrl);
     }
-    
-    const filename = `screenshot_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-    
-    await chrome.downloads.download({
-      url: dataUrl,
-      filename,
-      saveAs: false
-    });
-    
+
+    if (settings.screenshotDownloadImage) {
+      const filename = `screenshot_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+
+      await chrome.downloads.download({
+        url: dataUrl,
+        filename,
+        saveAs: false
+      });
+    }
+
     return { success: true };
   } catch (error) {
     return {
@@ -457,6 +534,38 @@ async function handleTakeScreenshot(payload: { crop: boolean }): Promise<Respons
       error: error instanceof Error ? error.message : 'Failed to take screenshot'
     };
   }
+}
+
+async function copyToClipboard(dataUrl: string): Promise<void> {
+  let offscreenUrl = chrome.runtime.getURL('src/offscreen/index.html');
+
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [offscreenUrl]
+  });
+
+  if (existingContexts.length === 0) {
+    await chrome.offscreen.createDocument({
+      url: offscreenUrl,
+      reasons: ['CLIPBOARD'],
+      justification: 'Copy screenshot to clipboard'
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'COPY_IMAGE_TO_CLIPBOARD', payload: { dataUrl } },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response?.success) {
+          resolve();
+        } else {
+          reject(new Error(response?.error || 'Failed to copy to clipboard'));
+        }
+      }
+    );
+  });
 }
 
 /**
@@ -485,6 +594,21 @@ async function handleUpdateSettings(payload: Partial<import('@/types/storage').A
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to update settings'
+    };
+  }
+}
+
+/**
+ * フォームデータ保存後にオプションページを開く
+ */
+function handleOpenOptionsWithFormData(): Response {
+  try {
+    chrome.runtime.openOptionsPage();
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to open options page'
     };
   }
 }

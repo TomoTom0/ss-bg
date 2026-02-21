@@ -60,3 +60,42 @@ export function matchUrls(currentUrl: string, entries: PasswordEntry[]): UrlMatc
 
   return results;
 }
+
+/**
+ * URLを正規化する
+ * - プロトコルを除去
+ * - 末尾のスラッシュを除去
+ * - 空文字列を除外
+ *
+ * @param url 正規化するURL
+ * @returns 正規化されたURL（無効な場合は空文字列）
+ */
+export function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  try {
+    // URLオブジェクトとして解析
+    const parsed = new URL(trimmed);
+
+    // プロトコルを除去し、ホスト名とパスを結合
+    let normalized = parsed.hostname + parsed.pathname;
+
+    // ポートがデフォルト以外の場合は追加
+    if (parsed.port &&
+        !((parsed.protocol === 'http:' && parsed.port === '80') ||
+          (parsed.protocol === 'https:' && parsed.port === '443'))) {
+      normalized = parsed.hostname + ':' + parsed.port + parsed.pathname;
+    }
+
+    // 末尾のスラッシュを除去
+    if (normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+
+    return normalized;
+  } catch {
+    // URLとして解析できない場合はそのまま返す（空でなければ）
+    return trimmed;
+  }
+}

@@ -1,7 +1,7 @@
 import { storage } from './storage';
 import type { Session } from '@/types/session';
 
-const RP_NAME = 'SS-BG Password Manager';
+const RP_NAME = 'bg-ss';
 const APP_SALT = new Uint8Array(32).fill(0x55); // 固定salt（アプリケーション固有）
 const HKDF_SALT = new Uint8Array(32).fill(0xAA); // HKDF用salt
 const HKDF_INFO = new TextEncoder().encode('ss-bg-encryption-key-v1');
@@ -45,8 +45,8 @@ export async function registerCredential(): Promise<PublicKeyCredential> {
       },
       user: {
         id: userId,
-        name: 'user@ss-bg',
-        displayName: 'SS-BG User'
+        name: 'user@bg-ss',
+        displayName: 'bg-ss User'
       },
       pubKeyCredParams: [
         { type: 'public-key', alg: -7 },   // ES256
@@ -72,23 +72,11 @@ export async function registerCredential(): Promise<PublicKeyCredential> {
   // PRF対応確認
   const prfResult = credential.getClientExtensionResults().prf;
   const prfEnabled = prfResult?.enabled ?? false;
-  
-  console.log('WebAuthn Credential created:');
-  console.log('- Authenticator Attachment:', credential.authenticatorAttachment);
-  console.log('- PRF Extension Result:', prfResult);
-  console.log('- PRF Enabled:', prfEnabled);
-  console.log('- Credential ID length:', credential.rawId.byteLength);
-  
+
   // Credential IDを保存
   const credentialIdBase64 = arrayBufferToBase64(credential.rawId);
   await storage.saveCredentialId(credentialIdBase64);
   await storage.saveSettings({ prfEnabled });
-  
-  if (prfEnabled) {
-    console.log('PRF is available - using PRF-based key derivation');
-  } else {
-    console.log('PRF not available - using signature-based key derivation');
-  }
   
   return credential;
 }
@@ -107,7 +95,7 @@ export async function authenticate(): Promise<{ key: CryptoKey; credentialId: Ar
   // PRF対応状態を取得
   const settings = await storage.getSettings();
   const prfEnabled = settings.prfEnabled ?? false;
-  
+
   if (prfEnabled) {
     // PRF対応の場合
     return await authenticateWithPRF(credentialId);
@@ -180,18 +168,11 @@ async function authenticateWithSignature(credentialId: ArrayBuffer): Promise<{ k
     throw new Error('Authentication was cancelled');
   }
   
-  const response = assertion.response as AuthenticatorAssertionResponse;
-  
-  // 署名から鍵を導出
-  // 注意: 署名は決定論的ではないが、authenticatorDataとclientDataJSONを組み合わせることで
-  // ある程度の一貫性を持たせることができる
-  const authenticatorData = new Uint8Array(response.authenticatorData);
-  const clientDataJSON = new Uint8Array(response.clientDataJSON);
-  
-  // authenticatorDataとcredentialIdを組み合わせて鍵素材を作成
-  const keyMaterial = new Uint8Array(authenticatorData.length + credentialId.byteLength);
-  keyMaterial.set(authenticatorData, 0);
-  keyMaterial.set(new Uint8Array(credentialId), authenticatorData.length);
+  // credentialIdとAPP_SALTのみから決定論的にキーを導出
+  // これにより、同じCredentialを使えば常に同じキーが生成される
+  const keyMaterial = new Uint8Array(credentialId.byteLength + APP_SALT.byteLength);
+  keyMaterial.set(new Uint8Array(credentialId), 0);
+  keyMaterial.set(APP_SALT, credentialId.byteLength);
   
   const key = await deriveKeyFromMaterial(keyMaterial);
   

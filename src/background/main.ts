@@ -1,6 +1,63 @@
-import { handleMessage } from "./background";
+import { handleMessage, ensureContentScriptInjected } from "./background";
+import { isSessionStatus, isPasswordEntryArray } from "@/types/message";
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// イベントリスナーを最優先で登録
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  console.log('[bg-ss] contextMenus.onClicked fired:', info.menuItemId);
+
+  if (!tab?.id) {
+    return;
+  }
+
+  if (info.menuItemId === 'autofill-forms') {
+    const sessionStatus = await handleMessage({ type: 'GET_SESSION_STATUS' });
+
+    if (!sessionStatus.success || !isSessionStatus(sessionStatus.data) || !sessionStatus.data.authenticated) {
+      await chrome.storage.session.set({
+        pendingAutofillTabId: tab.id
+      });
+      await chrome.action.openPopup();
+      return;
+    }
+
+    await showPasswordDialog(tab.id);
+  } else if (info.menuItemId === 'save-form') {
+    const injected = await ensureContentScriptInjected(tab.id);
+    if (injected) {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: 'SAVE_CURRENT_FORM'
+      });
+    }
+  }
+});
+
+chrome.commands.onCommand.addListener(async (command) => {
+  console.log('[bg-ss] commands.onCommand fired:', command);
+
+  if (command === 'take-screenshot') {
+    await handleMessage({ type: 'TAKE_SCREENSHOT' });
+  } else if (command === 'autofill-forms') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab?.id) {
+      return;
+    }
+
+    const sessionStatus = await handleMessage({ type: 'GET_SESSION_STATUS' });
+
+    if (!sessionStatus.success || !isSessionStatus(sessionStatus.data) || !sessionStatus.data.authenticated) {
+      await chrome.storage.session.set({
+        pendingAutofillTabId: tab.id
+      });
+      await chrome.action.openPopup();
+      return;
+    }
+
+    await showPasswordDialog(tab.id);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handleMessage(message)
     .then(response => sendResponse(response))
     .catch(error => {
@@ -9,28 +66,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         error: error instanceof Error ? error.message : "Unknown error"
       });
     });
-  
   return true;
 });
 
-// コンテキストメニューの作成
-chrome.runtime.onInstalled.addListener(() => {
-  // 親メニュー
+// コンテキストメニューを作成
+chrome.contextMenus.removeAll(() => {
   chrome.contextMenus.create({
     id: 'ss-bg-root',
-    title: 'SS-BG パスワード管理',
+    title: 'bg-ss',
     contexts: ['editable']
   });
-  
-  // パスワードを入力
+
   chrome.contextMenus.create({
-    id: 'autofill-password',
+    id: 'autofill-forms',
     parentId: 'ss-bg-root',
-    title: 'パスワードを入力...',
+    title: '情報を入力...',
     contexts: ['editable']
   });
-  
-  // 現在のフォームを保存
+
   chrome.contextMenus.create({
     id: 'save-form',
     parentId: 'ss-bg-root',
@@ -39,30 +92,26 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// コンテキストメニューのクリックハンドラ
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (!tab?.id) return;
-  
-  if (info.menuItemId === 'autofill-password') {
-    // 全パスワードリストを取得してPopupで選択させる
-    const response = await handleMessage({ type: 'GET_PASSWORDS' });
-    
-    if (response.success && response.data) {
-      // Popupで選択させるために候補を保存
-      await chrome.storage.session.set({
-        autofillCandidates: response.data,
-        autofillTabId: tab.id,
-        autofillMode: 'select-entry' // エントリ選択モード
-      });
-      
-      await chrome.action.openPopup();
-    } else {
-      console.error('Failed to get passwords:', response.error);
-    }
-  } else if (info.menuItemId === 'save-form') {
-    // フォーム保存メッセージを送信
-    await chrome.tabs.sendMessage(tab.id, {
-      type: 'SAVE_CURRENT_FORM'
-    });
+async function showPasswordDialog(tabId: number) {
+  const injected = await ensureContentScriptInjected(tabId);
+  if (!injected) {
+    console.error('[bg-ss] Failed to inject content script');
+    return;
   }
-});
+
+  const response = await handleMessage({ type: 'GET_PASSWORDS' });
+
+  if (response.success && isPasswordEntryArray(response.data)) {
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'SHOW_PASSWORD_DIALOG',
+        payload: {
+          candidates: response.data,
+          tabId: tabId
+        }
+      });
+    } catch (error) {
+      console.error('[bg-ss] Failed to send message to content script:', error);
+    }
+  }
+}

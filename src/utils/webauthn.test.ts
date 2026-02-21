@@ -130,11 +130,17 @@ describe('webauthn utilities', () => {
       expect(extensions.prf?.enabled).toBe(true);
     });
 
-    it('PRF非対応の場合はエラーを投げる', async () => {
+    it('PRF非対応の場合も登録できる（prfEnabled=false）', async () => {
       const mockCredential = createMockCredential(false);
       vi.mocked(navigator.credentials.create).mockResolvedValue(mockCredential);
-      
-      await expect(registerCredential()).rejects.toThrow('PRF extension is not supported');
+
+      const credential = await registerCredential();
+      const extensions = credential.getClientExtensionResults();
+
+      expect(extensions.prf?.enabled).toBeUndefined();
+      // storageにprfEnabled=falseが保存される
+      const settings = await storage.getSettings();
+      expect(settings.prfEnabled).toBe(false);
     });
 
     it('credentialIdをstorageに保存する', async () => {
@@ -200,13 +206,16 @@ describe('webauthn utilities', () => {
     });
 
     it('PRF結果が取得できない場合はエラーを投げる', async () => {
+      // PRF有効状態に設定
+      await storage.saveSettings({ prfEnabled: true } as any);
+
       const mockAssertion = {
         ...createMockAssertion(),
         getClientExtensionResults: () => ({ prf: undefined })
       } as PublicKeyCredential;
-      
+
       vi.mocked(navigator.credentials.get).mockResolvedValue(mockAssertion);
-      
+
       await expect(authenticate()).rejects.toThrow('PRF evaluation failed');
     });
 

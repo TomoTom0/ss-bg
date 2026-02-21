@@ -1,6 +1,6 @@
 <template>
   <div class="popup">
-    <h1>SS-BG</h1>
+    <h1>bg-ss</h1>
     
     <div v-if="error" class="error">
       エラー: {{ error }}
@@ -12,7 +12,7 @@
     
     <!-- 自動入力候補選択（2段階選択） -->
     <div v-else-if="autofillMode === 'select-entry'" class="autofill-selection">
-      <h2>パスワードを選択</h2>
+      <h2>保存済み情報を選択</h2>
       <div class="candidate-list">
         <button 
           v-for="entry in autofillCandidates" 
@@ -161,6 +161,33 @@ async function authenticate(): Promise<void> {
     if (response.success) {
       await loadSessionStatus();
       actionError.value = null;
+      
+      // 認証完了後、保留中のタブIDがあればダイアログを表示
+      const sessionData = await chrome.storage.session.get(['pendingAutofillTabId']);
+      
+      if (sessionData.pendingAutofillTabId) {
+        const tabId = sessionData.pendingAutofillTabId;
+        await chrome.storage.session.remove(['pendingAutofillTabId']);
+        
+        // Backgroundにダイアログ表示を依頼
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: 'SHOW_PASSWORD_DIALOG_FOR_TAB',
+            payload: { tabId }
+          });
+          
+          if (result.success) {
+            // 成功したらPopupを閉じる
+            setTimeout(() => window.close(), 100);
+          } else {
+            console.error('[bg-ss Popup] Failed to show dialog:', result.error);
+            actionError.value = 'ダイアログ表示に失敗しました: ' + result.error;
+          }
+        } catch (error) {
+          console.error('[bg-ss Popup] Error sending message:', error);
+          actionError.value = 'メッセージ送信エラー: ' + (error instanceof Error ? error.message : 'Unknown error');
+        }
+      }
     } else {
       actionError.value = response.error || '認証に失敗しました';
     }
@@ -279,17 +306,40 @@ function openOptions(): void {
 onMounted(async () => {
   await loadSessionStatus();
   
-  // 自動入力候補を確認
-  const sessionData = await chrome.storage.session.get(['autofillCandidates', 'autofillTabId', 'autofillMode']);
-  if (sessionData.autofillCandidates && sessionData.autofillTabId) {
-    autofillCandidates.value = sessionData.autofillCandidates;
-    autofillTabId.value = sessionData.autofillTabId;
-    autofillMode.value = sessionData.autofillMode || 'select-entry';
+  // 保留中のタブIDを確認（認証完了後のダイアログ表示用）
+  const sessionData = await chrome.storage.session.get(['pendingAutofillTabId']);
+
+  // 未認証の場合は自動認証
+  if (sessionStatus.value && !sessionStatus.value.authenticated) {
+    await authenticate();
+    // authenticate()内でpendingAutofillTabIdをチェックするので、ここでreturn
+    return;
   }
   
-  // 未認証かつ自動入力候補がない場合のみ自動認証
-  if (sessionStatus.value && !sessionStatus.value.authenticated && autofillMode.value === null) {
-    await authenticate();
+  // 既に認証済みで、pendingAutofillTabIdがある場合
+  if (sessionData.pendingAutofillTabId) {
+    const tabId = sessionData.pendingAutofillTabId;
+    await chrome.storage.session.remove(['pendingAutofillTabId']);
+    
+    // Backgroundにダイアログ表示を依頼
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: 'SHOW_PASSWORD_DIALOG_FOR_TAB',
+        payload: { tabId }
+      });
+      
+      if (result.success) {
+        // 成功したらPopupを閉じる
+        setTimeout(() => window.close(), 100);
+      } else {
+        console.error('[bg-ss Popup onMounted] Failed to show dialog:', result.error);
+        actionError.value = 'ダイアログ表示に失敗しました: ' + result.error;
+      }
+    } catch (error) {
+      console.error('[bg-ss Popup onMounted] Error sending message:', error);
+      actionError.value = 'メッセージ送信エラー: ' + (error instanceof Error ? error.message : 'Unknown error');
+    }
+    return;
   }
   
   // 5秒ごとにセッション状態を更新
