@@ -1214,8 +1214,9 @@ function setupMessageListener(): void {
  * パスワードエントリ全体を自動入力
  */
 async function handleFillPassword(entry: PasswordEntry): Promise<void> {
-  const form = lastFocusedInput?.closest('form') || document.querySelector('form');
+  const form = lastFocusedInput?.closest('form');
   if (!form) {
+    showErrorDialog('対象のフォームを特定できませんでした。入力したいフォーム内のフィールドを一度クリックしてから再度お試しください。');
     return;
   }
 
