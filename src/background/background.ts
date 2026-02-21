@@ -13,33 +13,41 @@ let currentSession: Session | null = null;
  * コンテンツスクリプトが注入されているか確認し、必要なら注入する
  */
 export async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
+  const INJECTION_RETRY_ATTEMPTS = 10;
+  const INJECTION_RETRY_DELAY_MS = 100;
+
   try {
     const result = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    if (result && result.pong) {
+    if (result?.pong) {
       console.log('[bg-ss] Content script already injected');
       return true;
     }
-  } catch {
-    console.log('[bg-ss] Content script not yet injected');
+  } catch (e) {
+    // コンテンツスクリプトが存在しないことを示すエラーメッセージ。これ以外は予期せぬエラー。
+    if (e instanceof Error && e.message.includes('Receiving end does not exist')) {
+      console.log('[bg-ss] Content script not yet injected');
+    } else {
+      console.error('[bg-ss] Failed to check for content script:', e);
+      return false;
+    }
   }
 
   try {
-    const results = await chrome.scripting.executeScript({
+    await chrome.scripting.executeScript({
       target: { tabId },
       files: ['assets/content-bundle.js']
     });
-    console.log('[bg-ss] executeScript results:', results);
 
-    for (let i = 0; i < 10; i++) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+    for (let i = 0; i < INJECTION_RETRY_ATTEMPTS; i++) {
+      await new Promise(resolve => setTimeout(resolve, INJECTION_RETRY_DELAY_MS));
       try {
         const result = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-        if (result && result.pong) {
+        if (result?.pong) {
           console.log(`[bg-ss] Content script ready after ${i + 1} retries`);
           return true;
         }
       } catch {
-        // リトライ継続
+        // リトライを継続
       }
     }
 
