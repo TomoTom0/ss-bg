@@ -2,6 +2,7 @@
  * メッセージ型
  */
 export type MessageType =
+  | 'PING'
   | 'GET_PASSWORDS'
   | 'SAVE_PASSWORD'
   | 'UPDATE_PASSWORD'

@@ -1178,8 +1178,12 @@ function setupContextMenuListener(): void {
  */
 function setupMessageListener(): void {
   chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
-    
-    if (message.type === 'FILL_PASSWORD') {
+
+    if (message.type === 'PING') {
+      // Content scriptが注入されているか確認
+      sendResponse({ pong: true });
+      return true;
+    } else if (message.type === 'FILL_PASSWORD') {
       handleFillPassword(message.payload);
       sendResponse({ success: true });
       return true;

@@ -10,6 +10,56 @@ import { isStringRecord, isAppSettings, isPasswordEntry } from '@/types/message'
 let currentSession: Session | null = null;
 
 /**
+ * コンテンツスクリプトが注入されているか確認し、必要なら注入する
+ */
+export async function ensureContentScriptInjected(tabId: number): Promise<boolean> {
+  const INJECTION_RETRY_ATTEMPTS = 10;
+  const INJECTION_RETRY_DELAY_MS = 100;
+
+  try {
+    const result = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+    if (result?.pong) {
+      console.log('[bg-ss] Content script already injected');
+      return true;
+    }
+  } catch (e) {
+    // コンテンツスクリプトが存在しないことを示すエラーメッセージ。これ以外は予期せぬエラー。
+    if (e instanceof Error && e.message.includes('Receiving end does not exist')) {
+      console.log('[bg-ss] Content script not yet injected');
+    } else {
+      console.error('[bg-ss] Failed to check for content script:', e);
+      return false;
+    }
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['assets/content-bundle.js']
+    });
+
+    for (let i = 0; i < INJECTION_RETRY_ATTEMPTS; i++) {
+      await new Promise(resolve => setTimeout(resolve, INJECTION_RETRY_DELAY_MS));
+      try {
+        const result = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+        if (result?.pong) {
+          console.log(`[bg-ss] Content script ready after ${i + 1} retries`);
+          return true;
+        }
+      } catch {
+        // リトライを継続
+      }
+    }
+
+    console.warn('[bg-ss] Content script not ready after retries');
+    return false;
+  } catch (error) {
+    console.error('[bg-ss] Failed to inject content script:', error);
+    return false;
+  }
+}
+
+/**
  * Service Workerの起動時にsession storageからセッションを復元
  */
 async function restoreSession(): Promise<void> {
@@ -398,7 +448,14 @@ async function handleShowPasswordDialogForTab(payload: { tabId: number }): Promi
     console.error('[bg-ss] Session is not valid');
     return { success: false, error: 'Session expired' };
   }
-  
+
+  // コンテンツスクリプトが注入されているか確認
+  const injected = await ensureContentScriptInjected(payload.tabId);
+  if (!injected) {
+    console.error('[bg-ss] Failed to inject content script');
+    return { success: false, error: 'Failed to inject content script' };
+  }
+
   try {
     const passwordsResponse = await handleGetPasswords();
     if (!passwordsResponse.success) {
