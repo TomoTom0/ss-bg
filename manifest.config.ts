@@ -9,6 +9,7 @@ export default defineManifest({
 
   permissions: [
     'storage',
+    'tabs',
     'activeTab',
     'downloads',
     'contextMenus',
@@ -51,6 +52,15 @@ export default defineManifest({
     },
     'autofill-forms': {
       description: 'フォームに情報を入力'
+    },
+    'favorite-1': {
+      description: 'お気に入り 1 を実行'
+    },
+    'favorite-2': {
+      description: 'お気に入り 2 を実行'
+    },
+    'favorite-3': {
+      description: 'お気に入り 3 を実行'
     }
   }
 });

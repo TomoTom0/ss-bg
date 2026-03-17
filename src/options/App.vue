@@ -299,7 +299,7 @@ async function authenticate(): Promise<void> {
   try {
     // セットアップ状態を確認
     const isSetup = await storage.getSetupStatus();
-    
+
     if (!isSetup) {
       // 初回セットアップ
       authError.value = '初回セットアップを実行中...';
@@ -307,7 +307,7 @@ async function authenticate(): Promise<void> {
       await storage.markSetupComplete();
       authError.value = 'セットアップ完了。認証中...';
     }
-    
+
     // WebAuthn認証を実行（オプションページから直接）
     const { key, credentialId } = await webauthnAuthenticate();
     

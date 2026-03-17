@@ -135,7 +135,7 @@ async function authenticate(): Promise<void> {
   try {
     // セットアップ状態を確認
     const isSetup = await storage.getSetupStatus();
-    
+
     if (!isSetup) {
       // 初回セットアップ
       actionError.value = '初回セットアップを実行中...';
@@ -143,7 +143,7 @@ async function authenticate(): Promise<void> {
       await storage.markSetupComplete();
       actionError.value = 'セットアップ完了。認証中...';
     }
-    
+
     // WebAuthn認証を実行（Popupから直接）
     const { key, credentialId } = await webauthnAuthenticate();
     
@@ -163,19 +163,38 @@ async function authenticate(): Promise<void> {
       actionError.value = null;
       
       // 認証完了後、保留中のタブIDがあればダイアログを表示
-      const sessionData = await chrome.storage.session.get(['pendingAutofillTabId']);
-      
-      if (sessionData.pendingAutofillTabId) {
+      const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId']);
+
+      if (sessionData.pendingSaveFormTabId) {
+        const tabId = sessionData.pendingSaveFormTabId;
+        await chrome.storage.session.remove(['pendingSaveFormTabId']);
+
+        // Backgroundにフォーム保存を依頼
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: 'SAVE_CURRENT_FORM_FOR_TAB',
+            payload: { tabId }
+          });
+          if (result.success) {
+            setTimeout(() => window.close(), 100);
+          } else {
+            actionError.value = 'フォーム保存に失敗しました: ' + result.error;
+          }
+        } catch (error) {
+          console.error('[bg-ss Popup] Error sending save form message:', error);
+          actionError.value = 'フォーム保存に失敗しました';
+        }
+      } else if (sessionData.pendingAutofillTabId) {
         const tabId = sessionData.pendingAutofillTabId;
         await chrome.storage.session.remove(['pendingAutofillTabId']);
-        
+
         // Backgroundにダイアログ表示を依頼
         try {
           const result = await chrome.runtime.sendMessage({
             type: 'SHOW_PASSWORD_DIALOG_FOR_TAB',
             payload: { tabId }
           });
-          
+
           if (result.success) {
             // 成功したらPopupを閉じる
             setTimeout(() => window.close(), 100);
@@ -307,27 +326,48 @@ onMounted(async () => {
   await loadSessionStatus();
   
   // 保留中のタブIDを確認（認証完了後のダイアログ表示用）
-  const sessionData = await chrome.storage.session.get(['pendingAutofillTabId']);
+  const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId']);
 
   // 未認証の場合は自動認証
   if (sessionStatus.value && !sessionStatus.value.authenticated) {
     await authenticate();
-    // authenticate()内でpendingAutofillTabIdをチェックするので、ここでreturn
     return;
   }
   
+  // 既に認証済みで、pendingSaveFormTabIdがある場合
+  if (sessionData.pendingSaveFormTabId) {
+    const tabId = sessionData.pendingSaveFormTabId;
+    await chrome.storage.session.remove(['pendingSaveFormTabId']);
+
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: 'SAVE_CURRENT_FORM_FOR_TAB',
+        payload: { tabId }
+      });
+      if (result.success) {
+        setTimeout(() => window.close(), 100);
+      } else {
+        actionError.value = 'フォーム保存に失敗しました: ' + result.error;
+      }
+    } catch (error) {
+      console.error('[bg-ss Popup onMounted] Error sending save form message:', error);
+      actionError.value = 'フォーム保存に失敗しました';
+    }
+    return;
+  }
+
   // 既に認証済みで、pendingAutofillTabIdがある場合
   if (sessionData.pendingAutofillTabId) {
     const tabId = sessionData.pendingAutofillTabId;
     await chrome.storage.session.remove(['pendingAutofillTabId']);
-    
+
     // Backgroundにダイアログ表示を依頼
     try {
       const result = await chrome.runtime.sendMessage({
         type: 'SHOW_PASSWORD_DIALOG_FOR_TAB',
         payload: { tabId }
       });
-      
+
       if (result.success) {
         // 成功したらPopupを閉じる
         setTimeout(() => window.close(), 100);
