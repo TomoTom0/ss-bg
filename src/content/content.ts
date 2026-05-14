@@ -1,5 +1,5 @@
 import type { Message } from '@/types/message';
-import type { PasswordEntry } from '@/types/storage';
+import type { PasswordEntry, FavoriteFieldMapping } from '@/types/storage';
 import { getFocusedInput, generateSelector, detectFieldType } from '@/utils/field-detector';
 import { captureFormData, detectForms } from './form-detector';
 import { normalizeUrl, matchUrl } from '@/utils/url-matcher';
@@ -21,6 +21,9 @@ let highlightElements: HTMLDivElement[] = [];
 
 // ハイライト用のCSSクラス名
 const HIGHLIGHT_CLASS = 'ss-bg-highlight-target';
+
+// お気に入り登録モード（null=通常モード、1~3=登録モード）
+let favoriteRegisterSlot: 1 | 2 | 3 | null = null;
 
 /**
  * Content Scriptの初期化
@@ -119,44 +122,10 @@ function calculateDialogPosition(inputRect: DOMRect): { top: number; left: numbe
 }
 
 /**
- * パスワード選択ダイアログを表示
+ * ダイアログ共通CSS
  */
-async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): Promise<void> {
-  // 既存のダイアログがあれば、何もせず終了（消さない）
-  if (dialogShadowHost) {
-    return;
-  }
-
-  // 最後にフォーカスされた入力欄の位置を取得
-  const targetInput = lastFocusedInput || document.activeElement as HTMLInputElement;
-  if (!targetInput || (targetInput.tagName !== 'INPUT' && targetInput.tagName !== 'TEXTAREA')) {
-    const firstInput = document.querySelector('input[type="password"], input[type="text"], input[type="email"]') as HTMLInputElement;
-    if (!firstInput) return;
-    lastFocusedInput = firstInput;
-  }
-
-  const rect = (lastFocusedInput || targetInput).getBoundingClientRect();
-  const dialogPos = calculateDialogPosition(rect);
-  
-  // Shadow DOMホストを作成
-  dialogShadowHost = document.createElement('div');
-  dialogShadowHost.id = 'ss-bg-dialog-host';
-  dialogShadowHost.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 2147483647;
-    pointer-events: none;
-  `;
-  
-  // Shadow DOMを作成してページのCSSから隔離
-  dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
-  
-  // CSSを注入
-  const styleEl = document.createElement('style');
-  styleEl.textContent = `
+function getDialogStyles(): string {
+  return `
     .ss-bg-dialog-content {
       background: rgba(255, 255, 255, 0.95);
       backdrop-filter: blur(2px);
@@ -340,7 +309,171 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
     .ss-bg-close-btn:hover {
       color: #333;
     }
+    .ss-bg-favorite-bar {
+      display: flex;
+      gap: 4px;
+      padding: 4px 8px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid #eee;
+    }
+    .ss-bg-favorite-star {
+      width: 28px;
+      height: 28px;
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
+      color: #999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ss-bg-favorite-star:hover {
+      border-color: #FFB300;
+      color: #FFB300;
+      background: #FFFDE7;
+    }
+    .ss-bg-favorite-star.active {
+      border-color: #FFB300;
+      background: #FFF8E1;
+      color: #E65100;
+    }
+    .ss-bg-favorite-star.registered {
+      border-color: #FFB300;
+      color: #FFB300;
+    }
+    .ss-bg-favorite-label {
+      font-size: 11px;
+      color: #999;
+      align-self: center;
+      margin-left: 4px;
+    }
+    .ss-bg-favorite-register-indicator {
+      padding: 4px 8px;
+      margin-bottom: 4px;
+      background: #FFF8E1;
+      border: 1px solid #FFB300;
+      border-radius: 2px;
+      font-size: 11px;
+      color: #E65100;
+      text-align: center;
+    }
+    .ss-bg-form-group {
+      margin-bottom: 8px;
+    }
+    .ss-bg-form-label {
+      display: block;
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 2px;
+    }
+    .ss-bg-form-input {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .ss-bg-form-input:focus {
+      outline: none;
+      border-color: #4CAF50;
+    }
+    .ss-bg-form-textarea {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      font-size: 13px;
+      box-sizing: border-box;
+      resize: vertical;
+      min-height: 40px;
+    }
+    .ss-bg-form-textarea:focus {
+      outline: none;
+      border-color: #4CAF50;
+    }
+    .ss-bg-password-item-row {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 2px;
+      align-items: stretch;
+    }
+    .ss-bg-password-item-row .ss-bg-password-item {
+      flex: 1;
+      margin-bottom: 0;
+    }
+    .ss-bg-edit-btn {
+      width: 32px;
+      min-width: 32px;
+      background: #f5f5f5;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ss-bg-edit-btn:hover {
+      background: #e0e0e0;
+      color: #333;
+    }
+    .ss-bg-success-message {
+      color: #2e7d32;
+      background: #e8f5e9;
+      padding: 8px;
+      border-radius: 2px;
+      margin-top: 4px;
+      font-size: 12px;
+      text-align: center;
+    }
   `;
+}
+
+/**
+ * パスワード選択ダイアログを表示
+ */
+async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): Promise<void> {
+  // 既存のダイアログがあれば、何もせず終了（消さない）
+  if (dialogShadowHost) {
+    return;
+  }
+
+  // 最後にフォーカスされた入力欄の位置を取得
+  const targetInput = lastFocusedInput || document.activeElement as HTMLInputElement;
+  if (!targetInput || (targetInput.tagName !== 'INPUT' && targetInput.tagName !== 'TEXTAREA')) {
+    const firstInput = document.querySelector('input[type="password"], input[type="text"], input[type="email"]') as HTMLInputElement;
+    if (!firstInput) return;
+    lastFocusedInput = firstInput;
+  }
+
+  const rect = (lastFocusedInput || targetInput).getBoundingClientRect();
+  const dialogPos = calculateDialogPosition(rect);
+  
+  // Shadow DOMホストを作成
+  dialogShadowHost = document.createElement('div');
+  dialogShadowHost.id = 'ss-bg-dialog-host';
+  dialogShadowHost.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2147483647;
+    pointer-events: none;
+  `;
+  
+  // Shadow DOMを作成してページのCSSから隔離
+  dialogShadowRoot = dialogShadowHost.attachShadow({ mode: 'closed' });
+  
+  // CSSを注入
+  const styleEl = document.createElement('style');
+  styleEl.textContent = getDialogStyles();
   dialogShadowRoot.appendChild(styleEl);
   
   // ダイアログコンテンツを作成
@@ -366,7 +499,19 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   // タイトルバー
   const titleBar = createTitleBar('パスワードを選択', () => closeDialog());
   dialogContent.appendChild(titleBar);
-  
+
+  // お気に入り星バー
+  const favoriteBar = await createFavoriteBar();
+  dialogContent.appendChild(favoriteBar);
+
+  // お気に入り登録モード表示
+  if (favoriteRegisterSlot !== null) {
+    const indicator = document.createElement('div');
+    indicator.className = 'ss-bg-favorite-register-indicator';
+    indicator.textContent = `お気に入り ${favoriteRegisterSlot} に登録します`;
+    dialogContent.appendChild(indicator);
+  }
+
   // 候補リスト
   if (candidates.length === 0) {
     const empty = document.createElement('div');
@@ -375,25 +520,39 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
     dialogContent.appendChild(empty);
   } else {
     candidates.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'ss-bg-password-item-row';
+
       const item = document.createElement('button');
       item.className = 'ss-bg-password-item';
-      
+
       const itemTitle = document.createElement('div');
       itemTitle.textContent = entry.title;
       itemTitle.className = 'ss-bg-item-title';
-      
+
       const itemUsername = document.createElement('div');
       itemUsername.textContent = entry.username;
       itemUsername.className = 'ss-bg-item-username';
-      
+
       item.appendChild(itemTitle);
       item.appendChild(itemUsername);
-      
+
       item.addEventListener('click', async () => {
         showFieldSelectionDialog(entry, tabId);
       });
-      
-      dialogContent.appendChild(item);
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'ss-bg-edit-btn';
+      editBtn.textContent = '\u270E'; // pencil
+      editBtn.title = '編集';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showEntryEditDialog(entry, tabId);
+      });
+
+      row.appendChild(item);
+      row.appendChild(editBtn);
+      dialogContent.appendChild(row);
     });
   }
   
@@ -419,6 +578,148 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   
   // 10秒後に監視停止
   setTimeout(() => observer.disconnect(), 10000);
+}
+
+/**
+ * お気に入り星バーを作成
+ */
+async function createFavoriteBar(): Promise<HTMLDivElement> {
+  const bar = document.createElement('div');
+  bar.className = 'ss-bg-favorite-bar';
+
+  const label = document.createElement('span');
+  label.className = 'ss-bg-favorite-label';
+  label.textContent = 'お気に入り:';
+  bar.appendChild(label);
+
+  // 現在のドメインのお気に入り状態を取得
+  const domain = window.location.hostname;
+  let registeredSlots: number[] = [];
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'GET_FAVORITES',
+      payload: { domain }
+    });
+    if (response.success && Array.isArray(response.data)) {
+      registeredSlots = response.data.map((f: { slot: number }) => f.slot);
+    }
+  } catch {
+    // ignore
+  }
+
+  for (let i = 1; i <= 3; i++) {
+    const slot = i as 1 | 2 | 3;
+    const star = document.createElement('button');
+    star.className = 'ss-bg-favorite-star';
+    if (registeredSlots.includes(slot)) {
+      star.classList.add('registered');
+    }
+    if (favoriteRegisterSlot === slot) {
+      star.classList.add('active');
+    }
+    star.textContent = `${slot}`;
+    star.title = registeredSlots.includes(slot)
+      ? `お気に入り ${slot} (登録済み) - クリックで登録モード切替`
+      : `お気に入り ${slot} - クリックで登録モード`;
+
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (favoriteRegisterSlot === slot) {
+        favoriteRegisterSlot = null;
+      } else {
+        favoriteRegisterSlot = slot;
+      }
+      // バー内の星ボタンのactive状態を更新
+      const stars = bar.querySelectorAll('.ss-bg-favorite-star');
+      stars.forEach((s, idx) => {
+        s.classList.toggle('active', idx + 1 === favoriteRegisterSlot);
+      });
+      // インジケーターを更新
+      updateFavoriteIndicator();
+    });
+
+    bar.appendChild(star);
+  }
+
+  return bar;
+}
+
+/**
+ * お気に入り登録モードのインジケーターを更新
+ */
+function updateFavoriteIndicator(): void {
+  if (!dialogContent || !dialogShadowRoot) return;
+
+  // 既存のインジケーターを削除
+  const existing = dialogContent.querySelector('.ss-bg-favorite-register-indicator');
+  if (existing) {
+    existing.remove();
+  }
+
+  if (favoriteRegisterSlot !== null) {
+    const indicator = document.createElement('div');
+    indicator.className = 'ss-bg-favorite-register-indicator';
+    indicator.textContent = `お気に入り ${favoriteRegisterSlot} に登録します`;
+    // 星バーの後に挿入
+    const favoriteBar = dialogContent.querySelector('.ss-bg-favorite-bar');
+    if (favoriteBar && favoriteBar.nextSibling) {
+      dialogContent.insertBefore(indicator, favoriteBar.nextSibling);
+    } else {
+      dialogContent.appendChild(indicator);
+    }
+  }
+}
+
+/**
+ * お気に入り動作を保存
+ */
+async function saveFavoriteAction(
+  slot: 1 | 2 | 3,
+  entry: PasswordEntry,
+  mappings: FavoriteFieldMapping[]
+): Promise<boolean> {
+  const domain = window.location.hostname;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'SAVE_FAVORITE',
+      payload: {
+        slot,
+        domain,
+        entryId: entry.id,
+        mappings,
+        createdAt: Date.now()
+      }
+    });
+    return response.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * セレクタを使ってお気に入り動作を実行（マッピングベース）
+ */
+function executeFavoriteMapping(entry: PasswordEntry, mappings: FavoriteFieldMapping[]): void {
+  for (const mapping of mappings) {
+    const element = document.querySelector(mapping.selector) as HTMLInputElement;
+    if (!element) continue;
+
+    let value: string | undefined;
+    if (mapping.source === 'username') {
+      value = entry.username;
+    } else if (mapping.source === 'password') {
+      value = entry.password;
+    } else if (mapping.source.startsWith('additional:')) {
+      const index = parseInt(mapping.source.split(':')[1], 10);
+      value = entry.additionalFields?.[index]?.value;
+    }
+
+    if (value !== undefined) {
+      element.value = value;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
 }
 
 /**
@@ -686,8 +987,8 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   dialogContent.appendChild(editFieldsBtn);
   
   // すべて入力ボタン
-  const allBtn = createFieldButton('すべて入力 (ユーザー名 + パスワード)', () => {
-    handleFillPassword(entry);
+  const allBtn = createFieldButton('すべて入力 (ユーザー名 + パスワード)', async () => {
+    await handleFillPassword(entry);
     closeDialog();
   });
   
@@ -704,7 +1005,7 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   // ユーザー名ボタン
   if (entry.username) {
     const usernameBtn = createFieldButton(`ユーザー名: ${entry.username}`, () => {
-      handleFillField({ value: entry.username });
+      handleFillField({ value: entry.username }, entry, 'username');
     });
     usernameBtn.addEventListener('mouseenter', () => {
       if (lastFocusedInput) {
@@ -716,11 +1017,11 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
     });
     dialogContent.appendChild(usernameBtn);
   }
-  
+
   // パスワードボタン
   if (entry.password) {
     const passwordBtn = createFieldButton('パスワード: ••••••••', () => {
-      handleFillField({ value: entry.password });
+      handleFillField({ value: entry.password }, entry, 'password');
     });
     passwordBtn.addEventListener('mouseenter', () => {
       if (lastFocusedInput) {
@@ -732,12 +1033,12 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
     });
     dialogContent.appendChild(passwordBtn);
   }
-  
+
   // 追加フィールド
   if (entry.additionalFields) {
-    entry.additionalFields.forEach(field => {
+    entry.additionalFields.forEach((field, index) => {
       const fieldBtn = createFieldButton(`${field.name}: ${field.value}`, () => {
-        handleFillField({ value: field.value });
+        handleFillField({ value: field.value }, entry, `additional:${index}`);
       });
       fieldBtn.addEventListener('mouseenter', () => {
         if (lastFocusedInput) {
@@ -799,6 +1100,7 @@ function closeDialog(): void {
   }
   document.body.classList.remove('ss-bg-dialog-active');
   removeAllHighlights();
+  favoriteRegisterSlot = null;
   dialogOverlay = null;
   dialogContent = null;
   dialogShadowHost = null;
@@ -1205,6 +1507,11 @@ function setupMessageListener(): void {
           sendResponse({ success: false, error: error.message });
         });
       return true; // 非同期レスポンスを返すことを示す
+    } else if (message.type === 'EXECUTE_FAVORITE') {
+      // お気に入り動作を実行
+      executeFavoriteMapping(message.payload.entry, message.payload.mappings);
+      sendResponse({ success: true });
+      return true;
     }
     return false;
   });
@@ -1220,6 +1527,9 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
     return;
   }
 
+  // お気に入り登録用のマッピングを収集
+  const favoriteMappings: FavoriteFieldMapping[] = [];
+
   // セレクタ情報がある場合はそれを使用
   if (entry.usernameSelector && entry.username) {
     const usernameField = document.querySelector(entry.usernameSelector) as HTMLInputElement;
@@ -1227,6 +1537,7 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
       usernameField.value = entry.username;
       usernameField.dispatchEvent(new Event('input', { bubbles: true }));
       usernameField.dispatchEvent(new Event('change', { bubbles: true }));
+      favoriteMappings.push({ selector: entry.usernameSelector, source: 'username' });
     }
   }
 
@@ -1236,26 +1547,35 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
       passwordField.value = entry.password;
       passwordField.dispatchEvent(new Event('input', { bubbles: true }));
       passwordField.dispatchEvent(new Event('change', { bubbles: true }));
+      favoriteMappings.push({ selector: entry.passwordSelector, source: 'password' });
     }
   }
 
   // 追加フィールド
   if (entry.additionalFields) {
-    for (const field of entry.additionalFields) {
+    entry.additionalFields.forEach((field, index) => {
       if (field.selector) {
         const element = document.querySelector(field.selector) as HTMLInputElement;
         if (element) {
           element.value = field.value;
           element.dispatchEvent(new Event('input', { bubbles: true }));
           element.dispatchEvent(new Event('change', { bubbles: true }));
+          favoriteMappings.push({ selector: field.selector, source: `additional:${index}` });
         }
       }
-    }
+    });
   }
 
   // セレクタ情報がない場合はヒューリスティック判定
   if (!entry.usernameSelector || !entry.passwordSelector) {
-    await handleFillPasswordHeuristic(entry);
+    const heuristicMappings = await handleFillPasswordHeuristic(entry);
+    favoriteMappings.push(...heuristicMappings);
+  }
+
+  // お気に入り登録モードの場合、保存する
+  if (favoriteRegisterSlot !== null && favoriteMappings.length > 0) {
+    await saveFavoriteAction(favoriteRegisterSlot, entry, favoriteMappings);
+    favoriteRegisterSlot = null;
   }
 
   // 現在のURLが登録されていない場合、URLを追加するか提案
@@ -1264,41 +1584,57 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
 
 /**
  * ヒューリスティック判定でパスワード入力
+ * マッピング情報を返す（お気に入り登録用）
  */
-async function handleFillPasswordHeuristic(entry: PasswordEntry): Promise<void> {
+async function handleFillPasswordHeuristic(entry: PasswordEntry): Promise<FavoriteFieldMapping[]> {
+  const mappings: FavoriteFieldMapping[] = [];
   const form = lastFocusedInput?.closest('form') || document.querySelector('form');
-  if (!form) return;
-  
+  if (!form) return mappings;
+
   const allInputs = Array.from(form.querySelectorAll('input')) as HTMLInputElement[];
-  
+
   // パスワードフィールドを探す
   const passwordField = allInputs.find(input => input.type === 'password' && input.offsetParent !== null);
   if (passwordField && entry.password) {
     passwordField.value = entry.password;
     passwordField.dispatchEvent(new Event('input', { bubbles: true }));
     passwordField.dispatchEvent(new Event('change', { bubbles: true }));
-    
+    const pwSelector = generateSelector(passwordField);
+    if (pwSelector) {
+      mappings.push({ selector: pwSelector, source: 'password' });
+    }
+
     // パスワードフィールドの直前のテキスト系inputをユーザー名フィールドと判定
     const passwordIndex = allInputs.indexOf(passwordField);
     for (let i = passwordIndex - 1; i >= 0; i--) {
       const input = allInputs[i];
       const fieldType = detectFieldType(input);
-      
-      if ((fieldType === 'username' || fieldType === 'email' || fieldType === 'text') && 
+
+      if ((fieldType === 'username' || fieldType === 'email' || fieldType === 'text') &&
           input.offsetParent !== null && entry.username) {
         input.value = entry.username;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
+        const unSelector = generateSelector(input);
+        if (unSelector) {
+          mappings.push({ selector: unSelector, source: 'username' });
+        }
         break;
       }
     }
   }
+  return mappings;
 }
 
 /**
  * 個別フィールドに入力
+ * entryとsourceを指定すると、お気に入り登録モード時にマッピングを保存する
  */
-async function handleFillField(payload: { value: string }): Promise<void> {
+async function handleFillField(
+  payload: { value: string },
+  entry?: PasswordEntry,
+  source?: FavoriteFieldMapping['source']
+): Promise<void> {
   const focused = getFocusedInput() || lastFocusedInput;
   if (!focused) {
     return;
@@ -1307,6 +1643,15 @@ async function handleFillField(payload: { value: string }): Promise<void> {
   focused.value = payload.value;
   focused.dispatchEvent(new Event('input', { bubbles: true }));
   focused.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // お気に入り登録モードの場合
+  if (favoriteRegisterSlot !== null && entry && source) {
+    const selector = generateSelector(focused);
+    if (selector) {
+      await saveFavoriteAction(favoriteRegisterSlot, entry, [{ selector, source }]);
+      favoriteRegisterSlot = null;
+    }
+  }
 }
 
 /**
@@ -1319,19 +1664,383 @@ async function handleSaveCurrentForm(): Promise<void> {
     return;
   }
 
-  // 最初のフォームを対象にする（複数ある場合は後で選択できるようにする）
+  // 最初のフォームを対象にする
   const formData = captureFormData(forms[0]);
 
   if (!formData.password) {
     showErrorDialog('パスワードフィールドが見つかりませんでした');
     return;
   }
-  
-  // Optionsページを開いて保存UIを表示
-  await chrome.storage.session.set({ capturedFormData: formData });
-  chrome.runtime.sendMessage({
-    type: 'OPEN_OPTIONS_WITH_FORM_DATA'
+
+  showSaveFormDialog(formData);
+}
+
+/**
+ * フォーム保存ダイアログを表示
+ */
+function showSaveFormDialog(formData: Partial<PasswordEntry>): void {
+  closeExistingDialogIfOpen();
+  createDialogHost('ss-bg-save-form-dialog-host');
+
+  const content = document.createElement('div');
+  content.className = 'ss-bg-dialog-content';
+  content.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 320px;
+    max-height: 80vh;
+    overflow-y: auto;
+    pointer-events: auto;
+  `;
+
+  // タイトルバー
+  const titleBar = createTitleBar('フォーム情報を保存', () => closeDialog());
+  content.appendChild(titleBar);
+
+  // タイトル
+  const titleGroup = createFormGroup('タイトル', formData.title || '');
+  content.appendChild(titleGroup.group);
+
+  // URL
+  const urlGroup = document.createElement('div');
+  urlGroup.className = 'ss-bg-form-group';
+  const urlLabel = document.createElement('label');
+  urlLabel.className = 'ss-bg-form-label';
+  urlLabel.textContent = 'URL';
+  const urlTextarea = document.createElement('textarea');
+  urlTextarea.className = 'ss-bg-form-textarea';
+  urlTextarea.value = formData.urls ? formData.urls.join('\n') : '';
+  urlTextarea.rows = 2;
+  urlGroup.appendChild(urlLabel);
+  urlGroup.appendChild(urlTextarea);
+  content.appendChild(urlGroup);
+
+  // ユーザー名
+  const usernameGroup = createFormGroup('ユーザー名', formData.username || '');
+  content.appendChild(usernameGroup.group);
+
+  // パスワード
+  const passwordGroup = createFormGroup('パスワード', formData.password || '', 'password');
+  content.appendChild(passwordGroup.group);
+
+  // 追加フィールド
+  const additionalInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement }> = [];
+  if (formData.additionalFields && formData.additionalFields.length > 0) {
+    const addLabel = document.createElement('div');
+    addLabel.className = 'ss-bg-form-label';
+    addLabel.textContent = '追加フィールド';
+    addLabel.style.marginBottom = '4px';
+    content.appendChild(addLabel);
+
+    for (const field of formData.additionalFields) {
+      const row = document.createElement('div');
+      row.className = 'ss-bg-field-row';
+      const nameInput = document.createElement('input');
+      nameInput.className = 'ss-bg-name-input';
+      nameInput.value = field.name;
+      nameInput.placeholder = '名前';
+      const valueInput = document.createElement('input');
+      valueInput.className = 'ss-bg-value-input';
+      valueInput.value = field.value;
+      valueInput.placeholder = '値';
+      row.appendChild(nameInput);
+      row.appendChild(valueInput);
+      content.appendChild(row);
+      additionalInputs.push({ nameInput, valueInput });
+    }
+  }
+
+  // 保存ボタン
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '保存';
+  saveBtn.className = 'ss-bg-save-btn';
+  saveBtn.style.marginTop = '8px';
+  saveBtn.addEventListener('click', async () => {
+    const entry: PasswordEntry = {
+      id: crypto.randomUUID(),
+      title: titleGroup.input.value.trim() || formData.title || '',
+      urls: urlTextarea.value.trim().split('\n').map(u => u.trim()).filter(Boolean),
+      username: usernameGroup.input.value,
+      password: passwordGroup.input.value,
+      usernameSelector: formData.usernameSelector,
+      passwordSelector: formData.passwordSelector,
+      additionalFields: additionalInputs
+        .map((inputs, i) => ({
+          name: inputs.nameInput.value.trim(),
+          value: inputs.valueInput.value.trim(),
+          selector: formData.additionalFields?.[i]?.selector || ''
+        }))
+        .filter(f => f.name && f.value),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    if (entry.additionalFields && entry.additionalFields.length === 0) {
+      entry.additionalFields = undefined;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'SAVE_PASSWORD',
+      payload: entry
+    });
+
+    if (response.success) {
+      const msg = document.createElement('div');
+      msg.className = 'ss-bg-success-message';
+      msg.textContent = '保存しました';
+      content.appendChild(msg);
+      setTimeout(() => closeDialog(), 1000);
+    } else {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存';
+      const errorMsg = document.createElement('div');
+      errorMsg.style.cssText = 'color:#d32f2f;background:#ffebee;padding:8px;border-radius:2px;margin-top:4px;font-size:12px;';
+      errorMsg.textContent = '保存に失敗しました: ' + (response.error || '不明なエラー');
+      content.appendChild(errorMsg);
+      setTimeout(() => errorMsg.remove(), 3000);
+    }
   });
+  content.appendChild(saveBtn);
+
+  // キャンセルボタン
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.className = 'ss-bg-cancel-btn';
+  cancelBtn.addEventListener('click', () => closeDialog());
+  content.appendChild(cancelBtn);
+
+  dialogContent = content;
+
+  const css = getDialogStyles();
+  renderDialogContent(css, content);
+}
+
+/**
+ * 既存パスワードエントリの編集ダイアログを表示
+ */
+function showEntryEditDialog(entry: PasswordEntry, tabId: number): void {
+  if (!dialogContent) return;
+
+  // ダイアログの内容をクリア
+  dialogContent.innerHTML = '';
+  dialogContent.style.maxHeight = '80vh';
+
+  // タイトルバー
+  const titleBar = createTitleBar('エントリを編集', () => closeDialog());
+  dialogContent.appendChild(titleBar);
+
+  // タイトル
+  const titleGroup = createFormGroup('タイトル', entry.title);
+  dialogContent.appendChild(titleGroup.group);
+
+  // URL
+  const urlGroup = document.createElement('div');
+  urlGroup.className = 'ss-bg-form-group';
+  const urlLabel = document.createElement('label');
+  urlLabel.className = 'ss-bg-form-label';
+  urlLabel.textContent = 'URL (1行に1つ)';
+  const urlTextarea = document.createElement('textarea');
+  urlTextarea.className = 'ss-bg-form-textarea';
+  urlTextarea.value = entry.urls.join('\n');
+  urlTextarea.rows = 2;
+  urlGroup.appendChild(urlLabel);
+  urlGroup.appendChild(urlTextarea);
+  dialogContent.appendChild(urlGroup);
+
+  // ユーザー名
+  const usernameGroup = createFormGroup('ユーザー名', entry.username);
+  dialogContent.appendChild(usernameGroup.group);
+
+  // パスワード
+  const passwordGroup = createFormGroup('パスワード', entry.password, 'password');
+  dialogContent.appendChild(passwordGroup.group);
+
+  // メモ
+  const notesGroup = createFormGroup('メモ', entry.notes || '');
+  dialogContent.appendChild(notesGroup.group);
+
+  // 追加フィールド
+  const additionalInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement }> = [];
+  const fieldsContainer = document.createElement('div');
+  fieldsContainer.className = 'ss-bg-fields-container';
+
+  if (entry.additionalFields && entry.additionalFields.length > 0) {
+    const addLabel = document.createElement('div');
+    addLabel.className = 'ss-bg-form-label';
+    addLabel.textContent = '追加フィールド';
+    addLabel.style.marginBottom = '4px';
+    dialogContent.appendChild(addLabel);
+
+    for (const field of entry.additionalFields) {
+      const { row, inputs } = createAdditionalFieldRow(field.name, field.value, field.selector || '', additionalInputs, fieldsContainer);
+      fieldsContainer.appendChild(row);
+      additionalInputs.push(inputs);
+    }
+  }
+  dialogContent.appendChild(fieldsContainer);
+
+  // フィールド追加ボタン
+  const addFieldBtn = createFieldButton('+ フィールドを追加', () => {
+    const { row, inputs } = createAdditionalFieldRow('', '', '', additionalInputs, fieldsContainer);
+    fieldsContainer.appendChild(row);
+    additionalInputs.push(inputs);
+  });
+  addFieldBtn.style.background = '#e3f2fd';
+  addFieldBtn.style.color = '#1976d2';
+  dialogContent.appendChild(addFieldBtn);
+
+  // 保存ボタン
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '保存';
+  saveBtn.className = 'ss-bg-save-btn';
+  saveBtn.style.marginTop = '8px';
+  saveBtn.addEventListener('click', async () => {
+    const updatedAdditionalFields = additionalInputs
+      .map(inputs => ({
+        name: inputs.nameInput.value.trim(),
+        value: inputs.valueInput.value.trim(),
+        selector: inputs.selectorInput.value.trim()
+      }))
+      .filter(f => f.name && f.value);
+
+    const updatedEntry: PasswordEntry = {
+      ...entry,
+      title: titleGroup.input.value.trim() || entry.title,
+      urls: urlTextarea.value.trim().split('\n').map(u => u.trim()).filter(Boolean),
+      username: usernameGroup.input.value,
+      password: passwordGroup.input.value,
+      notes: notesGroup.input.value.trim() || undefined,
+      additionalFields: updatedAdditionalFields.length > 0 ? updatedAdditionalFields : undefined,
+      updatedAt: Date.now()
+    };
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'UPDATE_PASSWORD',
+      payload: { id: entry.id, entry: updatedEntry }
+    });
+
+    if (response.success) {
+      const msg = document.createElement('div');
+      msg.className = 'ss-bg-success-message';
+      msg.textContent = '保存しました';
+      dialogContent!.appendChild(msg);
+      setTimeout(() => {
+        // 更新後のエントリでフィールド選択に戻る
+        showFieldSelectionDialog(updatedEntry, tabId);
+      }, 800);
+    } else {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存';
+      const errorMsg = document.createElement('div');
+      errorMsg.style.cssText = 'color:#d32f2f;background:#ffebee;padding:8px;border-radius:2px;margin-top:4px;font-size:12px;';
+      errorMsg.textContent = '保存に失敗: ' + (response.error || '不明なエラー');
+      dialogContent!.appendChild(errorMsg);
+      setTimeout(() => errorMsg.remove(), 3000);
+    }
+  });
+  dialogContent.appendChild(saveBtn);
+
+  // 戻るボタン
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '戻る';
+  backBtn.className = 'ss-bg-back-btn';
+  backBtn.addEventListener('click', async () => {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_PASSWORDS' });
+    if (response.success && response.data) {
+      const currentLastFocused = lastFocusedInput;
+      closeDialog();
+      lastFocusedInput = currentLastFocused;
+      await showPasswordDialog(response.data, tabId);
+    } else {
+      closeDialog();
+    }
+  });
+  dialogContent.appendChild(backBtn);
+}
+
+/**
+ * 追加フィールド行を作成
+ */
+function createAdditionalFieldRow(
+  name: string,
+  value: string,
+  selector: string,
+  inputsArray: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement }>,
+  container: HTMLElement
+): {
+  row: HTMLDivElement;
+  inputs: { nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement };
+} {
+  const row = document.createElement('div');
+  row.className = 'ss-bg-field-row';
+  row.style.padding = '4px';
+  row.style.marginBottom = '4px';
+  row.style.background = '#f9f9f9';
+  row.style.borderRadius = '4px';
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = name;
+  nameInput.placeholder = '名前';
+  nameInput.className = 'ss-bg-name-input';
+
+  const valueInput = document.createElement('input');
+  valueInput.type = 'text';
+  valueInput.value = value;
+  valueInput.placeholder = '値';
+  valueInput.className = 'ss-bg-value-input';
+
+  const selectorInput = document.createElement('input');
+  selectorInput.type = 'text';
+  selectorInput.value = selector;
+  selectorInput.placeholder = 'セレクタ';
+  selectorInput.className = 'ss-bg-selector-input';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.textContent = '削除';
+  removeBtn.className = 'ss-bg-remove-btn';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    const idx = inputsArray.findIndex(f => f.nameInput === nameInput);
+    if (idx !== -1) inputsArray.splice(idx, 1);
+  });
+
+  row.appendChild(nameInput);
+  row.appendChild(valueInput);
+  row.appendChild(selectorInput);
+  row.appendChild(removeBtn);
+
+  const inputs = { nameInput, valueInput, selectorInput };
+  return { row, inputs };
+}
+
+/**
+ * フォームグループ（ラベル+input）を作成
+ */
+function createFormGroup(
+  labelText: string,
+  value: string,
+  type: string = 'text'
+): { group: HTMLDivElement; input: HTMLInputElement } {
+  const group = document.createElement('div');
+  group.className = 'ss-bg-form-group';
+  const label = document.createElement('label');
+  label.className = 'ss-bg-form-label';
+  label.textContent = labelText;
+  const input = document.createElement('input');
+  input.className = 'ss-bg-form-input';
+  input.type = type;
+  input.value = value;
+  group.appendChild(label);
+  group.appendChild(input);
+  return { group, input };
 }
 
 /**

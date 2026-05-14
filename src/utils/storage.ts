@@ -1,4 +1,4 @@
-import type { AppSettings } from '@/types/storage';
+import type { AppSettings, FavoriteAction } from '@/types/storage';
 import type { EncryptedData } from '@/types/crypto';
 
 /**
@@ -87,6 +87,46 @@ class StorageWrapper {
    */
   async markSetupComplete(): Promise<void> {
     await chrome.storage.local.set({ isSetupComplete: true });
+  }
+
+  /**
+   * お気に入り動作を全て取得
+   */
+  async getFavorites(): Promise<FavoriteAction[]> {
+    const result = await chrome.storage.local.get('favorites') as { favorites?: FavoriteAction[] };
+    return result.favorites || [];
+  }
+
+  /**
+   * ドメインのお気に入り動作を取得
+   */
+  async getFavoritesByDomain(domain: string): Promise<FavoriteAction[]> {
+    const all = await this.getFavorites();
+    return all.filter(f => f.domain === domain);
+  }
+
+  /**
+   * お気に入り動作を保存（ドメインごとに最大3つ）
+   */
+  async saveFavorite(favorite: FavoriteAction): Promise<void> {
+    const all = await this.getFavorites();
+    // 同じドメイン・同じスロットの既存エントリを削除
+    const filtered = all.filter(
+      f => !(f.domain === favorite.domain && f.slot === favorite.slot)
+    );
+    filtered.push(favorite);
+    await chrome.storage.local.set({ favorites: filtered });
+  }
+
+  /**
+   * お気に入り動作を削除
+   */
+  async deleteFavorite(domain: string, slot: 1 | 2 | 3): Promise<void> {
+    const all = await this.getFavorites();
+    const filtered = all.filter(
+      f => !(f.domain === domain && f.slot === slot)
+    );
+    await chrome.storage.local.set({ favorites: filtered });
   }
 
   /**

@@ -34,6 +34,25 @@ export interface AppSettings {
 }
 
 /**
+ * お気に入り動作のフィールドマッピング
+ */
+export interface FavoriteFieldMapping {
+  selector: string;            // CSSセレクタ
+  source: 'username' | 'password' | `additional:${number}`;  // エントリ内のどのフィールドか
+}
+
+/**
+ * お気に入り動作
+ */
+export interface FavoriteAction {
+  slot: 1 | 2 | 3;            // スロット番号
+  domain: string;              // ドメイン名
+  entryId: string;             // PasswordEntry ID
+  mappings: FavoriteFieldMapping[];  // フィールドマッピング
+  createdAt: number;           // Unix timestamp (ms)
+}
+
+/**
  * Storageスキーマ
  */
 export interface StorageSchema {
@@ -48,4 +67,7 @@ export interface StorageSchema {
   
   // セットアップ完了フラグ
   isSetupComplete?: boolean;
+
+  // お気に入り動作（ドメインごとに最大3つ）
+  favorites?: FavoriteAction[];
 }

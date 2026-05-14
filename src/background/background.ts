@@ -1,6 +1,6 @@
 import type { Message, Response } from '@/types/message';
 import type { Session } from '@/types/session';
-import type { PasswordEntry } from '@/types/storage';
+import type { PasswordEntry, FavoriteAction } from '@/types/storage';
 import { authenticate, isSessionValid } from '@/utils/webauthn';
 import { decrypt, encrypt } from '@/utils/crypto';
 import { storage } from '@/utils/storage';
@@ -230,7 +230,34 @@ export async function handleMessage(message: Message): Promise<Response> {
         return await handleUpdateSettings(message.payload as Partial<Record<string, unknown>>);
 
       case 'OPEN_OPTIONS_WITH_FORM_DATA':
-        return handleOpenOptionsWithFormData();
+        return await handleOpenOptionsWithFormData(message.payload as { formData?: unknown } | undefined);
+
+      case 'SAVE_FAVORITE':
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for SAVE_FAVORITE' };
+        }
+        return await handleSaveFavorite(message.payload as FavoriteAction);
+
+      case 'GET_FAVORITES':
+        return await handleGetFavorites(message.payload as { domain?: string } | undefined);
+
+      case 'DELETE_FAVORITE':
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for DELETE_FAVORITE' };
+        }
+        return await handleDeleteFavorite(message.payload as { domain: string; slot: 1 | 2 | 3 });
+
+      case 'EXECUTE_FAVORITE':
+        if (!isStringRecord(message.payload)) {
+          return { success: false, error: 'Invalid payload for EXECUTE_FAVORITE' };
+        }
+        return await handleExecuteFavorite(message.payload as { domain: string; slot: 1 | 2 | 3; tabId: number });
+
+      case 'SAVE_CURRENT_FORM_FOR_TAB':
+        if (!isStringRecord(message.payload) || !('tabId' in message.payload)) {
+          return { success: false, error: 'Invalid payload for SAVE_CURRENT_FORM_FOR_TAB' };
+        }
+        return await handleSaveCurrentFormForTab(message.payload as { tabId: number });
 
       default:
         return { success: false, error: 'Unknown message type' };
@@ -599,10 +626,131 @@ async function handleUpdateSettings(payload: Partial<import('@/types/storage').A
 }
 
 /**
+ * お気に入り動作を保存
+ */
+async function handleSaveFavorite(favorite: FavoriteAction): Promise<Response> {
+  try {
+    await storage.saveFavorite(favorite);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save favorite'
+    };
+  }
+}
+
+/**
+ * お気に入り動作を取得
+ */
+async function handleGetFavorites(payload?: { domain?: string }): Promise<Response> {
+  try {
+    if (payload?.domain) {
+      const favorites = await storage.getFavoritesByDomain(payload.domain);
+      return { success: true, data: favorites };
+    }
+    const favorites = await storage.getFavorites();
+    return { success: true, data: favorites };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get favorites'
+    };
+  }
+}
+
+/**
+ * お気に入り動作を削除
+ */
+async function handleDeleteFavorite(payload: { domain: string; slot: 1 | 2 | 3 }): Promise<Response> {
+  try {
+    await storage.deleteFavorite(payload.domain, payload.slot);
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete favorite'
+    };
+  }
+}
+
+/**
+ * お気に入り動作を実行
+ */
+async function handleExecuteFavorite(payload: { domain: string; slot: 1 | 2 | 3; tabId: number }): Promise<Response> {
+  if (!isSessionValid(currentSession)) {
+    return { success: false, error: 'Session expired. Please authenticate.' };
+  }
+
+  try {
+    // お気に入りを取得
+    const favorites = await storage.getFavoritesByDomain(payload.domain);
+    const favorite = favorites.find(f => f.slot === payload.slot);
+    if (!favorite) {
+      return { success: false, error: `No favorite found for slot ${payload.slot} on ${payload.domain}` };
+    }
+
+    // パスワードエントリを取得
+    const passwordsResponse = await handleGetPasswords();
+    if (!passwordsResponse.success) {
+      return passwordsResponse;
+    }
+    const passwords = (passwordsResponse.data as PasswordEntry[]) || [];
+    const entry = passwords.find(p => p.id === favorite.entryId);
+    if (!entry) {
+      return { success: false, error: 'Password entry not found. It may have been deleted.' };
+    }
+
+    // コンテンツスクリプトに実行を依頼
+    const injected = await ensureContentScriptInjected(payload.tabId);
+    if (!injected) {
+      return { success: false, error: 'Failed to inject content script' };
+    }
+
+    await chrome.tabs.sendMessage(payload.tabId, {
+      type: 'EXECUTE_FAVORITE',
+      payload: {
+        entry,
+        mappings: favorite.mappings
+      }
+    });
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to execute favorite'
+    };
+  }
+}
+
+/**
  * フォームデータ保存後にオプションページを開く
  */
-function handleOpenOptionsWithFormData(): Response {
+/**
+ * タブのコンテンツスクリプトにフォーム保存を依頼
+ */
+async function handleSaveCurrentFormForTab(payload: { tabId: number }): Promise<Response> {
   try {
+    const injected = await ensureContentScriptInjected(payload.tabId);
+    if (!injected) {
+      return { success: false, error: 'Failed to inject content script' };
+    }
+    await chrome.tabs.sendMessage(payload.tabId, { type: 'SAVE_CURRENT_FORM' });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to save form'
+    };
+  }
+}
+
+async function handleOpenOptionsWithFormData(payload?: { formData?: unknown }): Promise<Response> {
+  try {
+    if (payload?.formData) {
+      await chrome.storage.session.set({ capturedFormData: payload.formData });
+    }
     chrome.runtime.openOptionsPage();
     return { success: true };
   } catch (error) {
