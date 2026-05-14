@@ -85,8 +85,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (tab?.url) {
             await updateFavoriteMenuItems(tab.url);
           }
-        } catch (e) {
-          console.debug('[bg-ss] Failed to update favorite menus after save/delete:', e);
+        } catch {
+          // ignore
         }
       }
       sendResponse(response);
@@ -127,8 +127,8 @@ chrome.contextMenus.removeAll(() => {
     if (tab?.url) {
       updateFavoriteMenuItems(tab.url);
     }
-  }).catch((e) => {
-    console.debug('[bg-ss] Failed to update favorite menus on init:', e);
+  }).catch(() => {
+    // ignore
   });
 });
 
@@ -139,8 +139,8 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     if (tab.url) {
       await updateFavoriteMenuItems(tab.url);
     }
-  } catch (e) {
-    console.debug('[bg-ss] Failed to update favorite menus on tab activation:', e);
+  } catch {
+    // ignore
   }
 });
 
@@ -150,8 +150,8 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
     if (changeInfo.url && tab.active) {
       await updateFavoriteMenuItems(changeInfo.url);
     }
-  } catch (e) {
-    console.debug('[bg-ss] Failed to update favorite menus on tab update:', e);
+  } catch {
+    // ignore
   }
 });
 
