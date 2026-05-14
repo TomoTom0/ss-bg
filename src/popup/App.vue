@@ -162,10 +162,30 @@ async function authenticate(): Promise<void> {
       await loadSessionStatus();
       actionError.value = null;
       
-      // 認証完了後、保留中のタブIDがあればダイアログを表示
-      const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId']);
+      // 認証完了後、保留中のタスクがあれば実行
+      const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId', 'pendingFavorite']);
 
-      if (sessionData.pendingSaveFormTabId) {
+      if (sessionData.pendingFavorite) {
+        const { tabId, slot } = sessionData.pendingFavorite;
+        await chrome.storage.session.remove(['pendingFavorite']);
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab?.url) {
+            const result = await chrome.runtime.sendMessage({
+              type: 'EXECUTE_FAVORITE',
+              payload: { domain: new URL(tab.url).hostname, slot, tabId }
+            });
+            if (result.success) {
+              setTimeout(() => window.close(), 100);
+            } else {
+              actionError.value = 'お気に入りの実行に失敗しました: ' + result.error;
+            }
+          }
+        } catch (e) {
+          console.error('[bg-ss Popup] Error executing pending favorite:', e);
+          actionError.value = 'お気に入りの実行中にエラーが発生しました。';
+        }
+      } else if (sessionData.pendingSaveFormTabId) {
         const tabId = sessionData.pendingSaveFormTabId;
         await chrome.storage.session.remove(['pendingSaveFormTabId']);
 
@@ -325,15 +345,39 @@ function openOptions(): void {
 onMounted(async () => {
   await loadSessionStatus();
   
-  // 保留中のタブIDを確認（認証完了後のダイアログ表示用）
-  const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId']);
+  // 保留中のタスクを確認（認証完了後のダイアログ表示用）
+  const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId', 'pendingFavorite']);
 
   // 未認証の場合は自動認証
   if (sessionStatus.value && !sessionStatus.value.authenticated) {
     await authenticate();
     return;
   }
-  
+
+  // 既に認証済みで、pendingFavoriteがある場合
+  if (sessionData.pendingFavorite) {
+    const { tabId, slot } = sessionData.pendingFavorite;
+    await chrome.storage.session.remove(['pendingFavorite']);
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab?.url) {
+        const result = await chrome.runtime.sendMessage({
+          type: 'EXECUTE_FAVORITE',
+          payload: { domain: new URL(tab.url).hostname, slot, tabId }
+        });
+        if (result.success) {
+          setTimeout(() => window.close(), 100);
+        } else {
+          actionError.value = 'お気に入りの実行に失敗しました: ' + result.error;
+        }
+      }
+    } catch (e) {
+      console.error('[bg-ss Popup onMounted] Error executing pending favorite:', e);
+      actionError.value = 'お気に入りの実行中にエラーが発生しました。';
+    }
+    return;
+  }
+
   // 既に認証済みで、pendingSaveFormTabIdがある場合
   if (sessionData.pendingSaveFormTabId) {
     const tabId = sessionData.pendingSaveFormTabId;
