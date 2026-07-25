@@ -10,6 +10,9 @@ global.chrome = {
     sendMessage: mockSendMessage
   },
   storage: {
+    local: {
+      get: vi.fn(() => Promise.resolve({ isSetupComplete: true }))
+    },
     session: {
       get: vi.fn((keys) => {
         return Promise.resolve(
@@ -196,6 +199,21 @@ describe('Popup App', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(mockSendMessage).toHaveBeenCalledWith({ type: 'GET_SESSION_STATUS' });
+    });
+
+    it('セットアップ未完了時は初期設定ボタンを表示する', async () => {
+      (global.chrome.storage.local.get as any).mockResolvedValue({ isSetupComplete: false });
+
+      mockSendMessage.mockResolvedValue({
+        success: true,
+        data: { authenticated: false }
+      });
+
+      const wrapper = mount(App);
+      await wrapper.vm.$nextTick();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(wrapper.text()).toContain('初期設定');
     });
 
     it('通信エラー時はエラー状態を表示する', async () => {

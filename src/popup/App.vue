@@ -67,7 +67,10 @@
       
       <div v-else class="not-authenticated">
         <p class="status">未認証</p>
-        <button @click="authenticate" class="btn btn-primary">
+        <button v-if="needsSetup" @click="setupAndAuthenticate" class="btn btn-primary">
+          初期設定
+        </button>
+        <button v-else @click="authenticate" class="btn btn-primary">
           認証
         </button>
       </div>
@@ -95,6 +98,7 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const actionError = ref<string | null>(null);
 const currentTime = ref(Date.now());
+const needsSetup = ref(false);
 const autofillCandidates = ref<PasswordEntry[]>([]);
 const autofillTabId = ref<number | null>(null);
 const autofillMode = ref<'select-entry' | 'select-field' | null>(null);
@@ -102,6 +106,33 @@ const selectedEntry = ref<PasswordEntry | null>(null);
 
 let updateInterval: number | null = null;
 let timeInterval: number | null = null;
+
+/**
+ * テーマを適用
+ */
+function applyTheme(theme: 'light' | 'dark' | 'auto'): void {
+  const root = document.documentElement;
+  root.removeAttribute('data-theme');
+
+  if (theme === 'light') {
+    root.setAttribute('data-theme', 'light');
+  } else if (theme === 'dark') {
+    root.setAttribute('data-theme', 'dark');
+  }
+  // 'auto'の場合はdata-theme属性を設定せず、システム設定に従う
+}
+
+/**
+ * テーマ設定を読み込んで適用
+ */
+async function loadAndApplyTheme(): Promise<void> {
+  try {
+    const settings = await storage.getSettings();
+    applyTheme(settings.theme || 'auto');
+  } catch (e) {
+    console.error('Failed to load theme setting:', e);
+  }
+}
 
 const remainingTime = computed(() => {
   if (!sessionStatus.value?.authenticated || !sessionStatus.value.expiresAt) {
@@ -130,20 +161,21 @@ async function loadSessionStatus(): Promise<void> {
   }
 }
 
+async function setupAndAuthenticate(): Promise<void> {
+  actionError.value = null;
+  try {
+    await registerCredential();
+    await storage.markSetupComplete();
+    needsSetup.value = false;
+    await authenticate();
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : 'セットアップエラー';
+  }
+}
+
 async function authenticate(): Promise<void> {
   actionError.value = null;
   try {
-    // セットアップ状態を確認
-    const isSetup = await storage.getSetupStatus();
-
-    if (!isSetup) {
-      // 初回セットアップ
-      actionError.value = '初回セットアップを実行中...';
-      await registerCredential();
-      await storage.markSetupComplete();
-      actionError.value = 'セットアップ完了。認証中...';
-    }
-
     // WebAuthn認証を実行（Popupから直接）
     const { key, credentialId } = await webauthnAuthenticate();
     
@@ -343,13 +375,21 @@ function openOptions(): void {
 }
 
 onMounted(async () => {
+  // テーマ設定を読み込んで適用
+  await loadAndApplyTheme();
+
   await loadSessionStatus();
-  
+
   // 保留中のタスクを確認（認証完了後のダイアログ表示用）
   const sessionData = await chrome.storage.session.get(['pendingAutofillTabId', 'pendingSaveFormTabId', 'pendingFavorite']);
 
-  // 未認証の場合は自動認証
+  // 未認証の場合は自動認証（セットアップ未完了の場合はボタンを表示）
   if (sessionStatus.value && !sessionStatus.value.authenticated) {
+    const isSetup = await storage.getSetupStatus();
+    if (!isSetup) {
+      needsSetup.value = true;
+      return;
+    }
     await authenticate();
     return;
   }
@@ -447,11 +487,16 @@ onUnmounted(() => {
 });
 </script>
 
+<style>
+@import "../styles/theme.css";
+</style>
+
 <style scoped>
 .popup {
   width: 300px;
   padding: 16px;
   font-family: system-ui, -apple-system, sans-serif;
+  color: var(--color-text-primary);
 }
 
 h1 {
@@ -466,13 +511,13 @@ h1 {
 }
 
 .loading {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
 }
 
 .error {
-  background: #ffebee;
-  color: #c62828;
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
 }
 
 .status {
@@ -482,7 +527,7 @@ h1 {
 
 .time {
   font-size: 14px;
-  color: #666;
+  color: var(--color-text-secondary);
   margin: 0 0 12px 0;
 }
 
@@ -498,17 +543,17 @@ h1 {
 }
 
 .btn-primary {
-  background: #4CAF50;
-  color: white;
+  background: var(--color-btn-primary);
+  color: var(--color-text-inverse);
 }
 
 .btn-primary:hover {
-  background: #45a049;
+  background: var(--color-btn-primary-hover);
 }
 
 .btn-warning {
   background: #ff9800;
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .btn-warning:hover {
@@ -518,12 +563,12 @@ h1 {
 .footer {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-light);
   text-align: center;
 }
 
 .footer a {
-  color: #1976d2;
+  color: var(--color-info-text);
   text-decoration: none;
 }
 
@@ -551,25 +596,27 @@ h1 {
   display: block;
   width: 100%;
   padding: 12px;
-  background: white;
-  border: 1px solid #ddd;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-medium);
   border-radius: 4px;
   cursor: pointer;
   text-align: left;
+  color: var(--color-text-primary);
 }
 
 .candidate-item:hover {
-  background: #f5f5f5;
-  border-color: #4CAF50;
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-btn-primary);
 }
 
 .candidate-title {
   font-weight: 600;
   margin-bottom: 4px;
+  color: var(--color-text-primary);
 }
 
 .candidate-username {
   font-size: 14px;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 </style>

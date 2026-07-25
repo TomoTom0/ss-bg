@@ -1,6 +1,6 @@
 {
   "name": "ss-bg",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "スクリーンショット撮影と、ローカルで暗号化されたテキスト情報の管理",
   "type": "module",
   "scripts": {

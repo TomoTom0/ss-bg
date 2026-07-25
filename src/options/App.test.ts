@@ -412,6 +412,41 @@ describe('Options App', () => {
       expect(wrapper.vm.formData.username).toBe('user1');
       expect(wrapper.vm.formData.password).toBe('pass1');
     });
+
+    it('編集保存時はUPDATE_PASSWORDメッセージが送信される（重複追加されない）', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: mockPasswords });
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // 編集ボタンをクリック
+      const editButton = wrapper.findAll('.btn-sm').find(b => b.text() === '編集');
+      await editButton?.trigger('click');
+      await flushPromises();
+
+      // マウント時の呼び出しを除外するためクリア
+      mockChromeRuntimeSendMessage.mockClear();
+
+      // パスワードを変更して保存
+      const passwordInput = wrapper.find('input[type="password"]');
+      await passwordInput.setValue('updated-pass');
+
+      const saveButton = wrapper.findAll('.btn-primary').find(b => b.text() === '保存');
+      await saveButton?.trigger('click');
+      await flushPromises();
+
+      const calls = mockChromeRuntimeSendMessage.mock.calls.map(
+        (c) => c[0] as { type: string; payload: unknown }
+      );
+      const updateMsg = calls.find((m) => m.type === 'UPDATE_PASSWORD');
+      const saveMsg = calls.find((m) => m.type === 'SAVE_PASSWORD');
+
+      // 編集時はUPDATE_PASSWORD（上書き）が送信され、SAVE_PASSWORD（追加）は送信されないこと
+      expect(updateMsg).toBeDefined();
+      expect(saveMsg).toBeUndefined();
+      // 既存idを保持して更新していること
+      expect((updateMsg!.payload as { id: string }).id).toBe('1');
+    });
   });
 
   describe('情報削除', () => {

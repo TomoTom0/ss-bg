@@ -19,6 +19,16 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.test.ts', 'tests/unit/**/*.test.ts'],
+    exclude: [
+      'node_modules/',
+      'dist/',
+      'tmp/',
+      'tests/e2e/**',
+      '**/*.config.ts',
+      '**/*.d.ts',
+      '**/types.ts'
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -26,6 +36,7 @@ export default defineConfig({
         'node_modules/',
         'dist/',
         'tmp/',
+        'tests/e2e/**',
         '**/*.config.ts',
         '**/*.d.ts',
         '**/types.ts'
