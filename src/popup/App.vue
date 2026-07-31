@@ -489,12 +489,22 @@ onUnmounted(() => {
 
 <style>
 @import "../styles/theme.css";
+
+/* ポップアップの外側キャンバスにもテーマ背景を適用。
+   設定しないとダークモードでテキストのみ明色になり、
+   Chromeの既定の白背景に明文字が乗ってしまう。 */
+html,
+body {
+  margin: 0;
+  background: var(--color-bg-primary);
+}
 </style>
 
 <style scoped>
 .popup {
   width: 300px;
   padding: 16px;
+  background: var(--color-bg-primary);
   font-family: system-ui, -apple-system, sans-serif;
   color: var(--color-text-primary);
 }

@@ -265,6 +265,13 @@ describe('content script', () => {
       // ダークモード対応のメディアクエリが含まれる
       expect(styles).toContain('@media (prefers-color-scheme: dark)');
 
+      // 保存テーマ（light/dark）を Shadow host の data-theme 属性で反映するため、
+      // data-theme 駆動のセレクタが含まれることを検証
+      expect(styles).toContain(":host[data-theme='dark']");
+      // auto（システム設定）の場合のみ OS 設定に従うよう、
+      // 明示テーマ以外に限定されたセレクタが含まれることを検証
+      expect(styles).toContain(":host:not([data-theme='light']):not([data-theme='dark'])");
+
       // 主要な要素にCSS変数が使用されていることを検証
       expect(styles).toContain('.ss-bg-dialog-content {');
       expect(styles).toContain('color: var(--color-dialog-text)');

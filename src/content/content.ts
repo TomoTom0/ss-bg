@@ -148,6 +148,36 @@ function calculateDialogPosition(inputRect: DOMRect): { top: number; left: numbe
  * ダイアログ共通CSS
  */
 function getDialogStyles(): string {
+  // ダークモード変数（明示的ダーク指定とauto/システムダークで共用）
+  const darkVariables = `
+      --color-bg-primary: #1e1e1e;
+      --color-bg-secondary: #2d2d2d;
+      --color-bg-tertiary: #252525;
+      --color-bg-elevated: #333333;
+      --color-bg-input: #2d2d2d;
+      --color-text-primary: #e0e0e0;
+      --color-text-secondary: #b0b0b0;
+      --color-text-tertiary: #888888;
+      --color-border-light: #333333;
+      --color-border-medium: #444444;
+      --color-btn-primary: #4CAF50;
+      --color-btn-primary-hover: #66bb6a;
+      --color-btn-danger: #f44336;
+      --color-btn-danger-hover: #ef5350;
+      --color-btn-default: #424242;
+      --color-btn-default-hover: #616161;
+      --color-dialog-bg: rgba(30, 30, 30, 0.95);
+      --color-dialog-text: #e0e0e0;
+      --color-dialog-border: #444444;
+      --color-success-bg: #1b5e20;
+      --color-success-text: #a5d6a7;
+      --color-favorite-bg: #4e342e;
+      --color-favorite-border: #FFB300;
+      --color-favorite-text: #ffb74d;
+      --color-favorite-hover-bg: #3e2723;
+      --color-focus-ring: #4CAF50;
+    `;
+
   return `
     :host {
       --color-bg-primary: #ffffff;
@@ -178,34 +208,15 @@ function getDialogStyles(): string {
       --color-focus-ring: #4CAF50;
     }
 
+    /* 明示的にダーク指定された場合 */
+    :host[data-theme='dark'] {
+      ${darkVariables.trim()}
+    }
+
+    /* auto（システム設定）の場合のみ、OS設定に従う */
     @media (prefers-color-scheme: dark) {
-      :host {
-        --color-bg-primary: #1e1e1e;
-        --color-bg-secondary: #2d2d2d;
-        --color-bg-tertiary: #252525;
-        --color-bg-elevated: #333333;
-        --color-bg-input: #2d2d2d;
-        --color-text-primary: #e0e0e0;
-        --color-text-secondary: #b0b0b0;
-        --color-text-tertiary: #888888;
-        --color-border-light: #333333;
-        --color-border-medium: #444444;
-        --color-btn-primary: #4CAF50;
-        --color-btn-primary-hover: #66bb6a;
-        --color-btn-danger: #f44336;
-        --color-btn-danger-hover: #ef5350;
-        --color-btn-default: #424242;
-        --color-btn-default-hover: #616161;
-        --color-dialog-bg: rgba(30, 30, 30, 0.95);
-        --color-dialog-text: #e0e0e0;
-        --color-dialog-border: #444444;
-        --color-success-bg: #1b5e20;
-        --color-success-text: #a5d6a7;
-        --color-favorite-bg: #4e342e;
-        --color-favorite-border: #FFB300;
-        --color-favorite-text: #ffb74d;
-        --color-favorite-hover-bg: #3e2723;
-        --color-focus-ring: #4CAF50;
+      :host:not([data-theme='light']):not([data-theme='dark']) {
+        ${darkVariables.trim()}
       }
     }
 
@@ -576,8 +587,12 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   dialogContent = document.createElement('div');
   dialogContent.className = 'ss-bg-dialog-content';
 
-  // テーマ設定に基づいて色を決定
-  const isDarkMode = await isDarkModeEnabled();
+  // テーマ設定に基づいてhostのdata-themeと外観色を決定
+  const theme = await getThemeSetting();
+  if (theme === 'light' || theme === 'dark') {
+    dialogShadowHost.setAttribute('data-theme', theme);
+  }
+  const isDarkMode = theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const dialogBg = isDarkMode ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)';
   const dialogText = isDarkMode ? '#e0e0e0' : '#333333';
   const dialogBorder = isDarkMode ? '#444444' : '#cccccc';
@@ -1317,9 +1332,15 @@ function closeExistingDialogIfOpen(): void {
 /**
  * ダイアログ用のShadow DOMホストを作成
  */
-function createDialogHost(hostId: string): void {
+async function createDialogHost(hostId: string): Promise<void> {
   dialogShadowHost = document.createElement('div');
   dialogShadowHost.id = hostId;
+  // Shadow hostにテーマを反映。ダイアログのCSSはdata-theme属性で切り替える。
+  // light/darkは明示、autoは属性なし（システム設定に従う）。
+  const theme = await getThemeSetting();
+  if (theme === 'light' || theme === 'dark') {
+    dialogShadowHost.setAttribute('data-theme', theme);
+  }
   dialogShadowHost.style.cssText = `
     position: fixed;
     top: 0;
@@ -1382,9 +1403,9 @@ function renderDialogContent(css: string, contentElement: HTMLElement): void {
 /**
  * エラーダイアログを表示
  */
-function showErrorDialog(message: string): void {
+async function showErrorDialog(message: string): Promise<void> {
   closeExistingDialogIfOpen();
-  createDialogHost('ss-bg-error-dialog-host');
+  await createDialogHost('ss-bg-error-dialog-host');
 
   const dialogContent = document.createElement('div');
   dialogContent.className = 'ss-bg-error-dialog-content';
@@ -1419,8 +1440,18 @@ function showErrorDialog(message: string): void {
       --color-btn-default-hover: #e0e0e0;
     }
 
+    /* 明示的にダーク指定された場合 */
+    :host[data-theme='dark'] {
+      --color-bg-elevated: #333333;
+      --color-text-primary: #e0e0e0;
+      --color-border-error: #d32f2f;
+      --color-btn-default: #424242;
+      --color-btn-default-hover: #616161;
+    }
+
+    /* auto（システム設定）の場合のみ、OS設定に従う */
     @media (prefers-color-scheme: dark) {
-      :host {
+      :host:not([data-theme='light']):not([data-theme='dark']) {
         --color-bg-elevated: #333333;
         --color-text-primary: #e0e0e0;
         --color-border-error: #d32f2f;
@@ -1477,11 +1508,11 @@ function showErrorDialog(message: string): void {
 /**
  * 確認ダイアログを表示
  */
-function showConfirmDialog(message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    closeExistingDialogIfOpen();
-    createDialogHost('ss-bg-confirm-dialog-host');
+async function showConfirmDialog(message: string): Promise<boolean> {
+  closeExistingDialogIfOpen();
+  await createDialogHost('ss-bg-confirm-dialog-host');
 
+  return new Promise<boolean>((resolve) => {
     const dialogContent = document.createElement('div');
     dialogContent.className = 'ss-bg-confirm-dialog-content';
     dialogContent.setAttribute('role', 'dialog');
@@ -1535,8 +1566,21 @@ function showConfirmDialog(message: string): Promise<boolean> {
         --color-text-inverse: #ffffff;
       }
 
+      /* 明示的にダーク指定された場合 */
+      :host[data-theme='dark'] {
+        --color-bg-elevated: #333333;
+        --color-text-primary: #e0e0e0;
+        --color-border-medium: #444444;
+        --color-btn-default: #424242;
+        --color-btn-default-hover: #616161;
+        --color-btn-primary: #4CAF50;
+        --color-btn-primary-hover: #66bb6a;
+        --color-text-inverse: #ffffff;
+      }
+
+      /* auto（システム設定）の場合のみ、OS設定に従う */
       @media (prefers-color-scheme: dark) {
-        :host {
+        :host:not([data-theme='light']):not([data-theme='dark']) {
           --color-bg-elevated: #333333;
           --color-text-primary: #e0e0e0;
           --color-border-medium: #444444;
@@ -1669,7 +1713,7 @@ function setupMessageListener(): void {
 async function handleFillPassword(entry: PasswordEntry): Promise<void> {
   const form = lastFocusedInput?.closest('form');
   if (!form) {
-    showErrorDialog('対象のフォームを特定できませんでした。入力したいフォーム内のフィールドを一度クリックしてから再度お試しください。');
+    await showErrorDialog('対象のフォームを特定できませんでした。入力したいフォーム内のフィールドを一度クリックしてから再度お試しください。');
     return;
   }
 
@@ -1806,7 +1850,7 @@ async function handleFillField(
 async function handleSaveCurrentForm(): Promise<void> {
   const forms = detectForms();
   if (forms.length === 0) {
-    showErrorDialog('フォームが見つかりません');
+    await showErrorDialog('フォームが見つかりません');
     return;
   }
 
@@ -1814,7 +1858,7 @@ async function handleSaveCurrentForm(): Promise<void> {
   const formData = captureFormData(forms[0]);
 
   if (!formData.password) {
-    showErrorDialog('パスワードフィールドが見つかりませんでした');
+    await showErrorDialog('パスワードフィールドが見つかりませんでした');
     return;
   }
 
@@ -1826,7 +1870,7 @@ async function handleSaveCurrentForm(): Promise<void> {
  */
 async function showSaveFormDialog(formData: Partial<PasswordEntry>): Promise<void> {
   closeExistingDialogIfOpen();
-  createDialogHost('ss-bg-save-form-dialog-host');
+  await createDialogHost('ss-bg-save-form-dialog-host');
 
   const content = document.createElement('div');
   content.className = 'ss-bg-dialog-content';

@@ -301,6 +301,10 @@ function applyTheme(theme: 'light' | 'dark' | 'auto'): void {
 async function saveThemeSetting(): Promise<void> {
   try {
     await storage.saveSettings({ theme: themeSetting.value });
+    // メイン設定モデル(settings.value)も同期。
+    // 同期しないと、後で「設定を保存」を押した際に saveSettings() が
+    // マウント時の古い theme を UPDATE_SETTINGS で送信し、テーマが復元されてしまう。
+    settings.value.theme = themeSetting.value;
     applyTheme(themeSetting.value);
   } catch (e) {
     console.error('Failed to save theme setting:', e);
@@ -644,6 +648,15 @@ onMounted(async () => {
 
 <style>
 @import "../styles/theme.css";
+
+/* ページ全体の外側キャンバスにもテーマ背景を適用。
+   設定しないとダークモードでテキストのみ明色になり、
+   Chromeの既定の白背景に明文字が乗ってしまう。 */
+html,
+body {
+  margin: 0;
+  background: var(--color-bg-primary);
+}
 </style>
 
 <style scoped>

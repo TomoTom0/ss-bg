@@ -36,6 +36,7 @@ vi.mock('@/utils/storage', () => ({
     getSetupStatus: vi.fn().mockResolvedValue(true),
     markSetupComplete: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({ sessionTimeout: 30 }),
+    saveSettings: vi.fn().mockResolvedValue(undefined),
     clearAll: vi.fn()
   }
 }));
@@ -597,6 +598,54 @@ describe('Options App', () => {
 
       // UPDATE_SETTINGSメッセージが送信されたことを確認
       expect(settingsSaved).toBe(true);
+    });
+
+    it('テーマ変更後に設定を保存すると新しいテーマが送信される', async () => {
+      // 回帰テーマ: saveThemeSetting() で settings.value.theme を同期しないと、
+      // 後で「設定を保存」を押した際に古いテーマが UPDATE_SETTINGS で復元される。
+      let capturedPayload: { theme?: string } | null = null;
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({
+            success: true,
+            data: { authenticated: true, expiresAt: Date.now() + 30000 }
+          });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          // マウント時は light を読み込む
+          return Promise.resolve({
+            success: true,
+            data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true, theme: 'light' }
+          });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: [] });
+        }
+        if (message.type === 'UPDATE_SETTINGS') {
+          capturedPayload = message.payload;
+          return Promise.resolve({ success: true });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // テーマを dark に変更（saveThemeSetting が発火し settings.value.theme も同期される）
+      const darkRadio = wrapper.find('input[type="radio"][value="dark"]');
+      await darkRadio.setValue(true);
+      await flushPromises();
+
+      // 設定を保存ボタンをクリック
+      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
+      await saveSettingsButton?.trigger('click');
+      await flushPromises();
+
+      // 同期されていれば新しいテーマ(dark)が送信される（同期漏れだと light が復元される）
+      expect(capturedPayload).not.toBeNull();
+      expect(capturedPayload?.theme).toBe('dark');
     });
 
     it('設定保存成功時にメッセージが表示される', async () => {
