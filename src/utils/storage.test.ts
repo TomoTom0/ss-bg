@@ -88,7 +88,8 @@ describe('storage utilities', () => {
         sessionTimeout: 30,
         prfEnabled: false,
         screenshotCopyToClipboard: true,
-        screenshotDownloadImage: true
+        screenshotDownloadImage: true,
+        theme: 'auto'
       });
     });
 
@@ -100,7 +101,8 @@ describe('storage utilities', () => {
         sessionTimeout: 60,
         prfEnabled: false,
         screenshotCopyToClipboard: true,
-        screenshotDownloadImage: true
+        screenshotDownloadImage: true,
+        theme: 'auto'
       });
     });
   });
@@ -150,7 +152,8 @@ describe('storage utilities', () => {
         sessionTimeout: 30,
         prfEnabled: false,
         screenshotCopyToClipboard: true,
-        screenshotDownloadImage: true
+        screenshotDownloadImage: true,
+        theme: 'auto'
       });
       expect(await storage.getSetupStatus()).toBe(false);
       expect(chrome.storage.local.clear).toHaveBeenCalled();
@@ -200,7 +203,8 @@ describe('storage utilities', () => {
         sessionTimeout: 60,
         prfEnabled: false,
         screenshotCopyToClipboard: true,
-        screenshotDownloadImage: true
+        screenshotDownloadImage: true,
+        theme: 'auto'
       });
       expect(await storage.getEncryptedPasswords()).toEqual(encryptedData);
     });

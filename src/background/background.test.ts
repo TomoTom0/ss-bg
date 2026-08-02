@@ -37,6 +37,16 @@ describe('background service worker', () => {
     vi.clearAllMocks();
     lockSession();
 
+    // crypto.subtle.exportKey/importKey をモック（createSession 内で使用される）
+    // webauthn テストでの本物 exportKey 使用に影響しないよう、ここで局所的にモック
+    vi.spyOn(crypto.subtle, 'exportKey').mockResolvedValue({
+      kty: 'oct',
+      k: 'mock-key',
+      alg: 'A256GCM',
+      ext: true
+    } as JsonWebKey);
+    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue(mockEncryptionKey);
+
     // デフォルトでcredentialIdを返すようにモック
     vi.mocked(chrome.storage.local.get).mockResolvedValue({
       credentialId: 'dGVzdA==',
@@ -187,6 +197,90 @@ describe('background service worker', () => {
       };
 
       const message: Message = { type: 'SAVE_PASSWORD', payload: entry };
+      const response = await handleMessage(message);
+
+      expect(response.success).toBe(false);
+      expect(response.error).toContain('Session expired');
+    });
+  });
+
+  describe('UPDATE_PASSWORD メッセージ', () => {
+    // 既存の暗号化パスワード配列をstorageに設定するヘルパー
+    const setStoredPasswords = async (passwords: PasswordEntry[]): Promise<void> => {
+      const encrypted = await (cryptoUtils.encrypt as Mock)(
+        JSON.stringify(passwords),
+        mockEncryptionKey
+      );
+      vi.mocked(chrome.storage.local.get).mockResolvedValue({
+        encryptedPasswords: JSON.stringify(encrypted)
+      });
+    };
+
+    beforeEach(() => {
+      createSession(mockEncryptionKey, new ArrayBuffer(8), 30);
+    });
+
+    it('既存エントリを上書き更新できる（重複追加されない）', async () => {
+      const existing: PasswordEntry = {
+        id: '1',
+        title: 'Test',
+        urls: ['https://example.com'],
+        username: 'user',
+        password: 'old-pass',
+        createdAt: 1000,
+        updatedAt: 1000
+      };
+      await setStoredPasswords([existing]);
+
+      const updated: PasswordEntry = { ...existing, password: 'new-pass', updatedAt: 2000 };
+      const message: Message = { type: 'UPDATE_PASSWORD', payload: { id: '1', entry: updated } };
+      const response = await handleMessage(message);
+
+      expect(response.success).toBe(true);
+
+      // encryptに渡された配列を検証: 重複追加(2件)ではなく1件の上書きであること
+      const calls = (cryptoUtils.encrypt as Mock).mock.calls;
+      const savedJson = calls[calls.length - 1][0] as string;
+      const saved = JSON.parse(savedJson) as PasswordEntry[];
+      expect(saved.length).toBe(1);
+      expect(saved[0].id).toBe('1');
+      expect(saved[0].password).toBe('new-pass');
+    });
+
+    it('存在しないidの場合はエラーを返す', async () => {
+      await setStoredPasswords([
+        {
+          id: '1',
+          title: 'Test',
+          urls: ['https://example.com'],
+          username: 'user',
+          password: 'pass',
+          createdAt: 1000,
+          updatedAt: 1000
+        }
+      ]);
+
+      const updated: PasswordEntry = {
+        id: '999',
+        title: 'Test',
+        urls: ['https://example.com'],
+        username: 'user',
+        password: 'pass',
+        createdAt: 1000,
+        updatedAt: 2000
+      };
+      const message: Message = { type: 'UPDATE_PASSWORD', payload: { id: '999', entry: updated } };
+      const response = await handleMessage(message);
+
+      expect(response.success).toBe(false);
+      expect(response.error).toContain('not found');
+    });
+
+    it('セッション無効時にエラーを返す', async () => {
+      lockSession();
+
+      const updated = {} as PasswordEntry;
+      const message: Message = { type: 'UPDATE_PASSWORD', payload: { id: '1', entry: updated } };
       const response = await handleMessage(message);
 
       expect(response.success).toBe(false);

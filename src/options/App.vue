@@ -24,7 +24,26 @@
           <div v-if="authError" class="error">{{ authError }}</div>
         </div>
       </section>
-      
+
+      <!-- テーマ設定 -->
+      <section class="section">
+        <h2>テーマ設定</h2>
+        <div class="theme-options">
+          <label class="theme-option">
+            <input type="radio" name="theme" value="auto" v-model="themeSetting" @change="saveThemeSetting">
+            <span>自動（システム設定に従う）</span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="light" v-model="themeSetting" @change="saveThemeSetting">
+            <span>ライト</span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="dark" v-model="themeSetting" @change="saveThemeSetting">
+            <span>ダーク</span>
+          </label>
+        </div>
+      </section>
+
       <!-- 保存済み情報一覧 -->
       <section class="section">
         <h2>保存済み情報</h2>
@@ -220,8 +239,11 @@ const passwords = ref<PasswordEntry[]>([]);
 const settings = ref<AppSettings>({
   sessionTimeout: 30,
   screenshotCopyToClipboard: true,
-  screenshotDownloadImage: true
+  screenshotDownloadImage: true,
+  theme: 'auto'
 });
+
+const themeSetting = ref<'light' | 'dark' | 'auto'>('auto');
 
 const sessionTimeoutOptions = [
   { value: 5, label: '5分' },
@@ -257,6 +279,38 @@ const formData = ref<{
   additionalFields: []
 });
 
+// テーマ設定
+/**
+ * テーマを適用
+ */
+function applyTheme(theme: 'light' | 'dark' | 'auto'): void {
+  const root = document.documentElement;
+  root.removeAttribute('data-theme');
+
+  if (theme === 'light') {
+    root.setAttribute('data-theme', 'light');
+  } else if (theme === 'dark') {
+    root.setAttribute('data-theme', 'dark');
+  }
+  // 'auto'の場合はdata-theme属性を設定せず、システム設定に従う
+}
+
+/**
+ * テーマ設定を保存
+ */
+async function saveThemeSetting(): Promise<void> {
+  try {
+    await storage.saveSettings({ theme: themeSetting.value });
+    // メイン設定モデル(settings.value)も同期。
+    // 同期しないと、後で「設定を保存」を押した際に saveSettings() が
+    // マウント時の古い theme を UPDATE_SETTINGS で送信し、テーマが復元されてしまう。
+    settings.value.theme = themeSetting.value;
+    applyTheme(themeSetting.value);
+  } catch (e) {
+    console.error('Failed to save theme setting:', e);
+  }
+}
+
 // パスワード表示状態を管理
 const visiblePasswordIds = ref<Set<string>>(new Set());
 
@@ -289,6 +343,11 @@ async function checkSessionStatus(): Promise<void> {
     if (response.success && response.data) {
       isAuthenticated.value = response.data.authenticated;
     }
+
+    // テーマ設定を読み込んで適用
+    const currentSettings = await storage.getSettings();
+    themeSetting.value = currentSettings.theme || 'auto';
+    applyTheme(themeSetting.value);
   } catch (e) {
     console.error('Failed to check session status:', e);
   }
@@ -488,10 +547,13 @@ async function saveEntry(): Promise<void> {
   };
 
   try {
-    const response = await sendMessage({
-      type: 'SAVE_PASSWORD',
-      payload: entry
-    });
+    // 編集時はUPDATE_PASSWORD（既存レコード上書き）、新規時はSAVE_PASSWORD（追加）
+    const isEditing = !!editingEntry.value;
+    const response = await sendMessage(
+      isEditing
+        ? { type: 'UPDATE_PASSWORD', payload: { id: editingEntry.value!.id, entry } }
+        : { type: 'SAVE_PASSWORD', payload: entry }
+    );
 
     if (response.success) {
       await loadPasswords();
@@ -584,12 +646,26 @@ onMounted(async () => {
 });
 </script>
 
+<style>
+@import "../styles/theme.css";
+
+/* ページ全体の外側キャンバスにもテーマ背景を適用。
+   設定しないとダークモードでテキストのみ明色になり、
+   Chromeの既定の白背景に明文字が乗ってしまう。 */
+html,
+body {
+  margin: 0;
+  background: var(--color-bg-primary);
+}
+</style>
+
 <style scoped>
 .options {
   max-width: 800px;
   margin: 0 auto;
   padding: 24px;
   font-family: system-ui, -apple-system, sans-serif;
+  color: var(--color-text-primary);
 }
 
 h1 {
@@ -604,21 +680,21 @@ h2 {
 .section {
   margin-bottom: 32px;
   padding: 20px;
-  background: #f9f9f9;
+  background: var(--color-bg-secondary);
   border-radius: 8px;
 }
 
 .auth-section {
-  background: #e3f2fd;
+  background: var(--color-auth-bg);
 }
 
 .danger-section {
-  background: #ffebee;
-  border: 2px solid #ef5350;
+  background: var(--color-danger-bg);
+  border: 2px solid var(--color-danger-border);
 }
 
 .warning-text {
-  color: #c62828;
+  color: var(--color-error-text);
   font-weight: 600;
   margin-bottom: 12px;
 }
@@ -626,14 +702,14 @@ h2 {
 .confirm-dialog {
   margin-top: 16px;
   padding: 16px;
-  background: white;
+  background: var(--color-bg-elevated);
   border-radius: 4px;
-  border: 1px solid #ef5350;
+  border: 1px solid var(--color-danger-border);
 }
 
 .confirm-dialog p {
   margin: 0 0 12px 0;
-  color: #c62828;
+  color: var(--color-error-text);
   font-weight: 600;
 }
 
@@ -649,13 +725,13 @@ h2 {
 }
 
 .status-ok {
-  color: #2e7d32;
+  color: var(--color-success-text);
   font-weight: 600;
   margin: 0;
 }
 
 .status-warning {
-  color: #f57c00;
+  color: var(--color-warning-text);
   font-weight: 600;
   margin: 0;
 }
@@ -667,31 +743,31 @@ h2 {
 }
 
 .loading {
-  background: #e3f2fd;
-  color: #1976d2;
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
 }
 
 .error {
-  background: #ffebee;
-  color: #c62828;
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
 }
 
 .success {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
 }
 
 .empty {
   padding: 20px;
   text-align: center;
-  color: #999;
+  color: var(--color-text-tertiary);
 }
 
 .auth-required {
   padding: 20px;
   text-align: center;
-  color: #666;
-  background: #fff3e0;
+  color: var(--color-text-secondary);
+  background: var(--color-warning-bg);
   border-radius: 4px;
 }
 
@@ -712,27 +788,28 @@ h2 {
 }
 
 .password-label {
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .password-value {
   font-family: monospace;
-  color: #333;
+  color: var(--color-text-primary);
   flex: 1;
 }
 
 .btn-icon {
   border: none;
-  background: #f5f5f5;
+  background: var(--color-bg-tertiary);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 14px;
   line-height: 1;
+  color: var(--color-text-primary);
 }
 
 .btn-icon:hover {
-  background: #e0e0e0;
+  background: var(--color-border-medium);
 }
 
 .password-item {
@@ -740,7 +817,7 @@ h2 {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: white;
+  background: var(--color-bg-elevated);
   border-radius: 4px;
   margin-bottom: 8px;
 }
@@ -752,13 +829,13 @@ h2 {
 
 .password-info .username {
   margin: 4px 0;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
 .password-info .urls {
   margin: 4px 0;
-  color: #999;
+  color: var(--color-text-tertiary);
   font-size: 12px;
 }
 
@@ -774,39 +851,39 @@ h2 {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  background: #e0e0e0;
-  color: #333;
+  background: var(--color-btn-default);
+  color: var(--color-text-primary);
 }
 
 .btn:hover {
-  background: #d0d0d0;
+  background: var(--color-btn-default-hover);
 }
 
 .btn-primary {
-  background: #4CAF50;
-  color: white;
+  background: var(--color-btn-primary);
+  color: var(--color-text-inverse);
 }
 
 .btn-primary:hover {
-  background: #45a049;
+  background: var(--color-btn-primary-hover);
 }
 
 .btn-danger {
-  background: #f44336;
-  color: white;
+  background: var(--color-btn-danger);
+  color: var(--color-text-inverse);
 }
 
 .btn-danger:hover {
-  background: #da190b;
+  background: var(--color-btn-danger-hover);
 }
 
 .btn-secondary {
-  background: #2196F3;
-  color: white;
+  background: var(--color-btn-secondary);
+  color: var(--color-text-inverse);
 }
 
 .btn-secondary:hover {
-  background: #1976D2;
+  background: var(--color-btn-secondary-hover);
 }
 
 .btn-sm {
@@ -828,7 +905,7 @@ h2 {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-bg-elevated);
   padding: 24px;
   border-radius: 8px;
   max-width: 500px;
@@ -843,6 +920,7 @@ h2 {
   display: block;
   margin-bottom: 4px;
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .form-group input[type="text"],
@@ -851,9 +929,11 @@ h2 {
 .form-group textarea {
   width: 100%;
   padding: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border-medium);
   border-radius: 4px;
   font-size: 14px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 .form-group input[type="checkbox"] {
@@ -863,11 +943,12 @@ h2 {
 .select-input {
   width: 100%;
   padding: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border-medium);
   border-radius: 4px;
   font-size: 14px;
-  background: white;
+  background: var(--color-bg-primary);
   cursor: pointer;
+  color: var(--color-text-primary);
 }
 
 .form-actions {
@@ -901,9 +982,11 @@ h2 {
 .field-selector-input {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border-medium);
   border-radius: 4px;
   font-size: 13px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 .field-name-input {
@@ -912,14 +995,14 @@ h2 {
 
 .field-selector-input {
   font-size: 11px;
-  color: #666;
+  color: var(--color-text-secondary);
   font-family: monospace;
 }
 
 .btn-remove {
   padding: 6px 10px;
-  background: #f44336;
-  color: white;
+  background: var(--color-btn-danger);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -929,14 +1012,14 @@ h2 {
 }
 
 .btn-remove:hover {
-  background: #da190b;
+  background: var(--color-btn-danger-hover);
 }
 
 .btn-add-field {
   width: 100%;
   margin-top: 4px;
-  background: #e3f2fd;
-  color: #1976d2;
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
 }
 
 .btn-add-field:hover {
@@ -946,9 +1029,9 @@ h2 {
 .empty-fields {
   padding: 12px;
   text-align: center;
-  color: #999;
+  color: var(--color-text-tertiary);
   font-size: 13px;
-  background: #f5f5f5;
+  background: var(--color-bg-tertiary);
   border-radius: 4px;
   margin-bottom: 8px;
 }
@@ -956,13 +1039,13 @@ h2 {
 .additional-fields-info {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--color-border-light);
 }
 
 .additional-fields-label {
   margin: 0 0 4px 0;
   font-size: 13px;
-  color: #666;
+  color: var(--color-text-secondary);
   font-weight: 600;
 }
 
@@ -970,7 +1053,7 @@ h2 {
   margin: 0;
   padding-left: 20px;
   font-size: 13px;
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .additional-fields-items li {

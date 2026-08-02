@@ -8,7 +8,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   sessionTimeout: 30,
   prfEnabled: false,
   screenshotCopyToClipboard: true,
-  screenshotDownloadImage: true
+  screenshotDownloadImage: true,
+  theme: 'auto'
 };
 
 /**

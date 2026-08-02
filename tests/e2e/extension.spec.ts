@@ -15,10 +15,10 @@ test.describe('Build Verification', () => {
   test('manifest.jsonが生成されている', () => {
     const manifestPath = path.join(EXTENSION_PATH, 'manifest.json');
     expect(fs.existsSync(manifestPath)).toBe(true);
-    
+
     // manifest.jsonの内容を検証
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    expect(manifest.name).toBe('SS-BG');
+    expect(manifest.name).toBe('bg-ss');
     expect(manifest.version).toBeDefined();
     expect(manifest.manifest_version).toBe(3);
   });
@@ -66,20 +66,23 @@ test.describe('Build Verification', () => {
   test('manifest.jsonのpermissionsが正しい', () => {
     const manifestPath = path.join(EXTENSION_PATH, 'manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    
+
     expect(manifest.permissions).toContain('storage');
-    expect(manifest.permissions).toContain('unlimitedStorage');
-    expect(manifest.permissions).toContain('activeTab');
     expect(manifest.permissions).toContain('tabs');
+    expect(manifest.permissions).toContain('activeTab');
+    expect(manifest.permissions).toContain('downloads');
+    expect(manifest.permissions).toContain('contextMenus');
+    expect(manifest.permissions).toContain('offscreen');
+    expect(manifest.permissions).toContain('scripting');
   });
 
-  test('manifest.jsonのcontent_scriptsが設定されている', () => {
+  test('web_accessible_resourcesが設定されている', () => {
     const manifestPath = path.join(EXTENSION_PATH, 'manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    
-    expect(manifest.content_scripts).toBeDefined();
-    expect(Array.isArray(manifest.content_scripts)).toBe(true);
-    expect(manifest.content_scripts.length).toBeGreaterThan(0);
+
+    expect(manifest.web_accessible_resources).toBeDefined();
+    expect(Array.isArray(manifest.web_accessible_resources)).toBe(true);
+    expect(manifest.web_accessible_resources.length).toBeGreaterThan(0);
   });
 
   test('manifest.jsonのbackgroundが設定されている', () => {

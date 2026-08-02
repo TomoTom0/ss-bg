@@ -36,6 +36,7 @@ vi.mock('@/utils/storage', () => ({
     getSetupStatus: vi.fn().mockResolvedValue(true),
     markSetupComplete: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({ sessionTimeout: 30 }),
+    saveSettings: vi.fn().mockResolvedValue(undefined),
     clearAll: vi.fn()
   }
 }));
@@ -412,6 +413,41 @@ describe('Options App', () => {
       expect(wrapper.vm.formData.username).toBe('user1');
       expect(wrapper.vm.formData.password).toBe('pass1');
     });
+
+    it('編集保存時はUPDATE_PASSWORDメッセージが送信される（重複追加されない）', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: mockPasswords });
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // 編集ボタンをクリック
+      const editButton = wrapper.findAll('.btn-sm').find(b => b.text() === '編集');
+      await editButton?.trigger('click');
+      await flushPromises();
+
+      // マウント時の呼び出しを除外するためクリア
+      mockChromeRuntimeSendMessage.mockClear();
+
+      // パスワードを変更して保存
+      const passwordInput = wrapper.find('input[type="password"]');
+      await passwordInput.setValue('updated-pass');
+
+      const saveButton = wrapper.findAll('.btn-primary').find(b => b.text() === '保存');
+      await saveButton?.trigger('click');
+      await flushPromises();
+
+      const calls = mockChromeRuntimeSendMessage.mock.calls.map(
+        (c) => c[0] as { type: string; payload: unknown }
+      );
+      const updateMsg = calls.find((m) => m.type === 'UPDATE_PASSWORD');
+      const saveMsg = calls.find((m) => m.type === 'SAVE_PASSWORD');
+
+      // 編集時はUPDATE_PASSWORD（上書き）が送信され、SAVE_PASSWORD（追加）は送信されないこと
+      expect(updateMsg).toBeDefined();
+      expect(saveMsg).toBeUndefined();
+      // 既存idを保持して更新していること
+      expect((updateMsg!.payload as { id: string }).id).toBe('1');
+    });
   });
 
   describe('情報削除', () => {
@@ -562,6 +598,54 @@ describe('Options App', () => {
 
       // UPDATE_SETTINGSメッセージが送信されたことを確認
       expect(settingsSaved).toBe(true);
+    });
+
+    it('テーマ変更後に設定を保存すると新しいテーマが送信される', async () => {
+      // 回帰テーマ: saveThemeSetting() で settings.value.theme を同期しないと、
+      // 後で「設定を保存」を押した際に古いテーマが UPDATE_SETTINGS で復元される。
+      let capturedPayload: { theme?: string } | null = null;
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({
+            success: true,
+            data: { authenticated: true, expiresAt: Date.now() + 30000 }
+          });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          // マウント時は light を読み込む
+          return Promise.resolve({
+            success: true,
+            data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true, theme: 'light' }
+          });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: [] });
+        }
+        if (message.type === 'UPDATE_SETTINGS') {
+          capturedPayload = message.payload;
+          return Promise.resolve({ success: true });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // テーマを dark に変更（saveThemeSetting が発火し settings.value.theme も同期される）
+      const darkRadio = wrapper.find('input[type="radio"][value="dark"]');
+      await darkRadio.setValue(true);
+      await flushPromises();
+
+      // 設定を保存ボタンをクリック
+      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
+      await saveSettingsButton?.trigger('click');
+      await flushPromises();
+
+      // 同期されていれば新しいテーマ(dark)が送信される（同期漏れだと light が復元される）
+      expect(capturedPayload).not.toBeNull();
+      expect(capturedPayload?.theme).toBe('dark');
     });
 
     it('設定保存成功時にメッセージが表示される', async () => {

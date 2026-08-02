@@ -1,0 +1,160 @@
+/**
+ * 共通テーマCSS変数
+ * ライトモード・ダークモード対応
+ */
+
+:root {
+  /* ベースカラー */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f9f9f9;
+  --color-bg-tertiary: #f5f5f5;
+  --color-bg-elevated: #ffffff;
+
+  /* テキストカラー */
+  --color-text-primary: #333333;
+  --color-text-secondary: #666666;
+  --color-text-tertiary: #999999;
+  --color-text-inverse: #ffffff;
+
+  /* ボーダー */
+  --color-border-light: #eeeeee;
+  --color-border-medium: #cccccc;
+  --color-border-dark: #999999;
+
+  /* ステータスカラー */
+  --color-success-bg: #e8f5e9;
+  --color-success-text: #2e7d32;
+  --color-warning-bg: #fff3e0;
+  --color-warning-text: #f57c00;
+  --color-error-bg: #ffebee;
+  --color-error-text: #c62828;
+  --color-info-bg: #e3f2fd;
+  --color-info-text: #1976d2;
+
+  /* ボタン */
+  --color-btn-primary: #4CAF50;
+  --color-btn-primary-hover: #45a049;
+  --color-btn-secondary: #2196F3;
+  --color-btn-secondary-hover: #1976D2;
+  --color-btn-danger: #f44336;
+  --color-btn-danger-hover: #da190b;
+  --color-btn-default: #e0e0e0;
+  --color-btn-default-hover: #d0d0d0;
+
+  /* 特殊セクション */
+  --color-auth-bg: #e3f2fd;
+  --color-danger-bg: #ffebee;
+  --color-danger-border: #ef5350;
+
+  /* ダイアログ */
+  --color-dialog-bg: rgba(255, 255, 255, 0.95);
+  --color-dialog-text: #333333;
+  --color-dialog-border: #cccccc;
+}
+
+/* ダークモード（data-theme属性） */
+:root[data-theme='dark'] {
+  /* ベースカラー */
+  --color-bg-primary: #1e1e1e;
+  --color-bg-secondary: #2d2d2d;
+  --color-bg-tertiary: #252525;
+  --color-bg-elevated: #333333;
+
+  /* テキストカラー */
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #b0b0b0;
+  --color-text-tertiary: #888888;
+  --color-text-inverse: #ffffff;
+
+  /* ボーダー */
+  --color-border-light: #333333;
+  --color-border-medium: #444444;
+  --color-border-dark: #666666;
+
+  /* ステータスカラー */
+  --color-success-bg: #1b5e20;
+  --color-success-text: #a5d6a7;
+  --color-warning-bg: #4e342e;
+  --color-warning-text: #ffb74d;
+  --color-error-bg: #5d2d2d;
+  --color-error-text: #ef9a9a;
+  --color-info-bg: #0d47a1;
+  --color-info-text: #90caf9;
+
+  /* ボタン */
+  --color-btn-primary: #4CAF50;
+  --color-btn-primary-hover: #66bb6a;
+  --color-btn-secondary: #2196F3;
+  --color-btn-secondary-hover: #42a5f5;
+  --color-btn-danger: #f44336;
+  --color-btn-danger-hover: #ef5350;
+  --color-btn-default: #424242;
+  --color-btn-default-hover: #616161;
+
+  /* 特殊セクション */
+  --color-auth-bg: #0d47a1;
+  --color-danger-bg: #5d2d2d;
+  --color-danger-border: #d32f2f;
+
+  /* ダイアログ */
+  --color-dialog-bg: rgba(30, 30, 30, 0.95);
+  --color-dialog-text: #e0e0e0;
+  --color-dialog-border: #444444;
+}
+
+/* ライトモード（data-theme属性） */
+:root[data-theme='light'] {
+  /* デフォルトと同じため、明示的な設定なし */
+}
+
+/* ダークモード（システム設定） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    /* ベースカラー */
+    --color-bg-primary: #1e1e1e;
+    --color-bg-secondary: #2d2d2d;
+    --color-bg-tertiary: #252525;
+    --color-bg-elevated: #333333;
+
+    /* テキストカラー */
+    --color-text-primary: #e0e0e0;
+    --color-text-secondary: #b0b0b0;
+    --color-text-tertiary: #888888;
+    --color-text-inverse: #ffffff;
+
+    /* ボーダー */
+    --color-border-light: #333333;
+    --color-border-medium: #444444;
+    --color-border-dark: #666666;
+
+    /* ステータスカラー */
+    --color-success-bg: #1b5e20;
+    --color-success-text: #a5d6a7;
+    --color-warning-bg: #4e342e;
+    --color-warning-text: #ffb74d;
+    --color-error-bg: #5d2d2d;
+    --color-error-text: #ef9a9a;
+    --color-info-bg: #0d47a1;
+    --color-info-text: #90caf9;
+
+    /* ボタン */
+    --color-btn-primary: #4CAF50;
+    --color-btn-primary-hover: #66bb6a;
+    --color-btn-secondary: #2196F3;
+    --color-btn-secondary-hover: #42a5f5;
+    --color-btn-danger: #f44336;
+    --color-btn-danger-hover: #ef5350;
+    --color-btn-default: #424242;
+    --color-btn-default-hover: #616161;
+
+    /* 特殊セクション */
+    --color-auth-bg: #0d47a1;
+    --color-danger-bg: #5d2d2d;
+    --color-danger-border: #d32f2f;
+
+    /* ダイアログ */
+    --color-dialog-bg: rgba(30, 30, 30, 0.95);
+    --color-dialog-text: #e0e0e0;
+    --color-dialog-border: #444444;
+  }
+}

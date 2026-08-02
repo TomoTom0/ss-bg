@@ -31,6 +31,7 @@ export interface AppSettings {
   prfEnabled?: boolean;    // PRF対応状態
   screenshotCopyToClipboard: boolean;  // スクリーンショットをクリップボードにコピー（デフォルト: true）
   screenshotDownloadImage: boolean;     // スクリーンショットをダウンロード（デフォルト: true）
+  theme: 'light' | 'dark' | 'auto';   // テーマ設定（デフォルト: 'auto'）
 }
 
 /**

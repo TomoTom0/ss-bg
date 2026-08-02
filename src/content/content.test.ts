@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initialize, getLastFocusedInput } from './content';
+import { initialize, getLastFocusedInput, getDialogStylesForTest } from './content';
 
 // chrome APIのモック
 const mockSendMessage = vi.fn();
@@ -249,6 +249,65 @@ describe('content script', () => {
 
       // エラーが発生しないことを確認
       expect(true).toBe(true);
+    });
+  });
+
+  describe('ダークテーマ対応', () => {
+    it('ダイアログCSSにCSS変数が含まれる', () => {
+      const styles = getDialogStylesForTest();
+
+      // CSS変数が定義されていることを検証
+      expect(styles).toContain(':host {');
+      expect(styles).toContain('--color-bg-primary:');
+      expect(styles).toContain('--color-text-primary:');
+      expect(styles).toContain('--color-border-medium:');
+
+      // ダークモード対応のメディアクエリが含まれる
+      expect(styles).toContain('@media (prefers-color-scheme: dark)');
+
+      // 保存テーマ（light/dark）を Shadow host の data-theme 属性で反映するため、
+      // data-theme 駆動のセレクタが含まれることを検証
+      expect(styles).toContain(":host[data-theme='dark']");
+      // auto（システム設定）の場合のみ OS 設定に従うよう、
+      // 明示テーマ以外に限定されたセレクタが含まれることを検証
+      expect(styles).toContain(":host:not([data-theme='light']):not([data-theme='dark'])");
+
+      // 主要な要素にCSS変数が使用されていることを検証
+      expect(styles).toContain('.ss-bg-dialog-content {');
+      expect(styles).toContain('color: var(--color-dialog-text)');
+
+      expect(styles).toContain('.ss-bg-field-button {');
+      expect(styles).toContain('background: var(--color-bg-elevated)');
+
+      expect(styles).toContain('.ss-bg-password-item {');
+      expect(styles).toContain('background: var(--color-bg-elevated)');
+
+      // 入力フィールドにCSS変数が使用されている
+      expect(styles).toContain('.ss-bg-name-input {');
+      expect(styles).toContain('color: var(--color-text-primary)');
+
+      expect(styles).toContain('.ss-bg-value-input {');
+      expect(styles).toContain('color: var(--color-text-primary)');
+
+      expect(styles).toContain('.ss-bg-selector-input {');
+      expect(styles).toContain('color: var(--color-text-primary)');
+
+      expect(styles).toContain('.ss-bg-form-input {');
+      expect(styles).toContain('color: var(--color-text-primary)');
+
+      expect(styles).toContain('.ss-bg-form-textarea {');
+      expect(styles).toContain('color: var(--color-text-primary)');
+    });
+
+    it('ダークモードのページでもテキストが読める', () => {
+      // ダークモードをシミュレート
+      document.documentElement.style.setProperty('color', '#ffffff');
+
+      const styles = getDialogStylesForTest();
+
+      // 注入されるCSSでCSS変数が定義されていることを確認
+      expect(styles).toContain('--color-text-primary:');
+      expect(styles).toContain('--color-dialog-text:');
     });
   });
 });

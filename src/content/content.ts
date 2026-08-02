@@ -26,6 +26,29 @@ const HIGHLIGHT_CLASS = 'ss-bg-highlight-target';
 let favoriteRegisterSlot: 1 | 2 | 3 | null = null;
 
 /**
+ * テーマ設定を取得
+ */
+async function getThemeSetting(): Promise<'light' | 'dark' | 'auto'> {
+  try {
+    const result = await chrome.storage.local.get('settings') as { settings?: { theme?: 'light' | 'dark' | 'auto' } };
+    return result.settings?.theme || 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+/**
+ * テーマ設定に基づいてダークモードかどうかを判定
+ */
+async function isDarkModeEnabled(): Promise<boolean> {
+  const theme = await getThemeSetting();
+  if (theme === 'light') return false;
+  if (theme === 'dark') return true;
+  // 'auto'の場合はシステム設定に従う
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+/**
  * Content Scriptの初期化
  */
 export function initialize(): void {
@@ -125,11 +148,83 @@ function calculateDialogPosition(inputRect: DOMRect): { top: number; left: numbe
  * ダイアログ共通CSS
  */
 function getDialogStyles(): string {
+  // ダークモード変数（明示的ダーク指定とauto/システムダークで共用）
+  const darkVariables = `
+      --color-bg-primary: #1e1e1e;
+      --color-bg-secondary: #2d2d2d;
+      --color-bg-tertiary: #252525;
+      --color-bg-elevated: #333333;
+      --color-bg-input: #2d2d2d;
+      --color-text-primary: #e0e0e0;
+      --color-text-secondary: #b0b0b0;
+      --color-text-tertiary: #888888;
+      --color-border-light: #333333;
+      --color-border-medium: #444444;
+      --color-btn-primary: #4CAF50;
+      --color-btn-primary-hover: #66bb6a;
+      --color-btn-danger: #f44336;
+      --color-btn-danger-hover: #ef5350;
+      --color-btn-default: #424242;
+      --color-btn-default-hover: #616161;
+      --color-dialog-bg: rgba(30, 30, 30, 0.95);
+      --color-dialog-text: #e0e0e0;
+      --color-dialog-border: #444444;
+      --color-success-bg: #1b5e20;
+      --color-success-text: #a5d6a7;
+      --color-favorite-bg: #4e342e;
+      --color-favorite-border: #FFB300;
+      --color-favorite-text: #ffb74d;
+      --color-favorite-hover-bg: #3e2723;
+      --color-focus-ring: #4CAF50;
+    `;
+
   return `
+    :host {
+      --color-bg-primary: #ffffff;
+      --color-bg-secondary: #f9f9f9;
+      --color-bg-tertiary: #f5f5f5;
+      --color-bg-elevated: #ffffff;
+      --color-bg-input: #ffffff;
+      --color-text-primary: #333333;
+      --color-text-secondary: #666666;
+      --color-text-tertiary: #999999;
+      --color-border-light: #eeeeee;
+      --color-border-medium: #cccccc;
+      --color-btn-primary: #4CAF50;
+      --color-btn-primary-hover: #45a049;
+      --color-btn-danger: #f44336;
+      --color-btn-danger-hover: #d32f2f;
+      --color-btn-default: #f5f5f5;
+      --color-btn-default-hover: #e0e0e0;
+      --color-dialog-bg: rgba(255, 255, 255, 0.95);
+      --color-dialog-text: #333333;
+      --color-dialog-border: #cccccc;
+      --color-success-bg: #e8f5e9;
+      --color-success-text: #2e7d32;
+      --color-favorite-bg: #FFF8E1;
+      --color-favorite-border: #FFB300;
+      --color-favorite-text: #E65100;
+      --color-favorite-hover-bg: #FFFDE7;
+      --color-focus-ring: #4CAF50;
+    }
+
+    /* 明示的にダーク指定された場合 */
+    :host[data-theme='dark'] {
+      ${darkVariables.trim()}
+    }
+
+    /* auto（システム設定）の場合のみ、OS設定に従う */
+    @media (prefers-color-scheme: dark) {
+      :host:not([data-theme='light']):not([data-theme='dark']) {
+        ${darkVariables.trim()}
+      }
+    }
+
     .ss-bg-dialog-content {
-      background: rgba(255, 255, 255, 0.95);
+      background: var(--color-dialog-bg);
+      color: var(--color-dialog-text);
       backdrop-filter: blur(2px);
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-dialog-border);
       border-radius: 4px;
       padding: 8px;
       max-width: 350px;
@@ -139,7 +234,7 @@ function getDialogStyles(): string {
       pointer-events: auto;
     }
     .ss-bg-empty-message {
-      color: #999;
+      color: var(--color-text-tertiary);
       text-align: center;
       padding: 12px;
       font-size: 13px;
@@ -149,7 +244,8 @@ function getDialogStyles(): string {
       width: 100%;
       padding: 8px;
       margin-bottom: 2px;
-      background: white;
+      background: var(--color-bg-elevated);
+      color: var(--color-text-primary);
       border: none;
       border-radius: 2px;
       cursor: pointer;
@@ -157,19 +253,19 @@ function getDialogStyles(): string {
       font-size: 13px;
     }
     .ss-bg-password-item:hover {
-      background: #f0f0f0;
+      background: var(--color-bg-tertiary);
     }
     .ss-bg-item-title {
       font-weight: 600;
       margin-bottom: 2px;
-      color: #333;
+      color: var(--color-text-primary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .ss-bg-item-username {
       font-size: 12px;
-      color: #666;
+      color: var(--color-text-secondary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -178,22 +274,23 @@ function getDialogStyles(): string {
       width: 100%;
       padding: 6px;
       margin-top: 4px;
-      background: #f5f5f5;
+      background: var(--color-btn-default);
       border: none;
       border-radius: 2px;
       cursor: pointer;
       font-size: 12px;
-      color: #666;
+      color: var(--color-text-secondary);
     }
     .ss-bg-cancel-btn:hover {
-      background: #e0e0e0;
+      background: var(--color-btn-default-hover);
     }
     .ss-bg-field-button {
       display: block;
       width: 100%;
       padding: 8px;
       margin-bottom: 2px;
-      background: white;
+      background: var(--color-bg-elevated);
+      color: var(--color-text-primary);
       border: none;
       border-radius: 2px;
       cursor: pointer;
@@ -204,14 +301,14 @@ function getDialogStyles(): string {
       white-space: nowrap;
     }
     .ss-bg-field-button:hover {
-      background: #f0f0f0;
+      background: var(--color-bg-tertiary);
     }
     .ss-bg-instruction {
       margin: 0 0 8px 0;
       padding: 4px 8px;
       font-size: 12px;
-      color: #666;
-      background: #f9f9f9;
+      color: var(--color-text-secondary);
+      background: var(--color-bg-secondary);
       border-radius: 2px;
     }
     .ss-bg-fields-container {
@@ -225,67 +322,73 @@ function getDialogStyles(): string {
     .ss-bg-name-input {
       flex: 1;
       padding: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-border-medium);
       border-radius: 2px;
+      color: var(--color-text-primary);
       font-size: 12px;
+      background: var(--color-bg-input);
     }
     .ss-bg-value-input {
       flex: 2;
       padding: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-border-medium);
       border-radius: 2px;
+      color: var(--color-text-primary);
       font-size: 12px;
+      background: var(--color-bg-input);
     }
     .ss-bg-selector-input {
       flex: 3;
       padding: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-border-medium);
       border-radius: 2px;
+      color: var(--color-text-primary);
       font-size: 12px;
+      background: var(--color-bg-input);
     }
     .ss-bg-remove-btn {
       padding: 4px 8px;
-      background: #f44336;
-      color: white;
+      background: var(--color-btn-danger);
+      color: var(--color-text-primary);
       border: none;
       border-radius: 2px;
       cursor: pointer;
       font-size: 12px;
     }
     .ss-bg-remove-btn:hover {
-      background: #d32f2f;
+      background: var(--color-btn-danger-hover);
     }
     .ss-bg-save-btn {
       width: 100%;
       padding: 8px;
-      background: #4CAF50;
-      color: white;
+      background: var(--color-btn-primary);
+      color: var(--color-text-primary);
       border: none;
       border-radius: 2px;
       cursor: pointer;
       font-size: 13px;
     }
     .ss-bg-save-btn:hover {
-      background: #45a049;
+      background: var(--color-btn-primary-hover);
     }
     .ss-bg-back-btn {
       width: 100%;
       padding: 8px;
       margin-top: 4px;
-      background: #f5f5f5;
+      background: var(--color-btn-default);
       border: none;
       border-radius: 2px;
       cursor: pointer;
       font-size: 13px;
-      color: #666;
+      color: var(--color-text-secondary);
     }
     .ss-bg-back-btn:hover {
-      background: #e0e0e0;
+      background: var(--color-btn-default-hover);
     }
     .ss-bg-title-bar {
       margin: 0 0 8px 0;
       padding: 4px 8px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--color-border-light);
       cursor: move;
       user-select: none;
       display: flex;
@@ -295,70 +398,70 @@ function getDialogStyles(): string {
     .ss-bg-title-text {
       font-weight: 600;
       font-size: 13px;
-      color: #333;
+      color: var(--color-text-primary);
     }
     .ss-bg-close-btn {
       background: none;
       border: none;
       cursor: pointer;
       font-size: 16px;
-      color: #999;
+      color: var(--color-text-tertiary);
       padding: 0 4px;
       line-height: 1;
     }
     .ss-bg-close-btn:hover {
-      color: #333;
+      color: var(--color-text-primary);
     }
     .ss-bg-favorite-bar {
       display: flex;
       gap: 4px;
       padding: 4px 8px;
       margin-bottom: 4px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--color-border-light);
     }
     .ss-bg-favorite-star {
       width: 28px;
       height: 28px;
       background: none;
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-border-medium);
       border-radius: 4px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
       line-height: 1;
-      color: #999;
+      color: var(--color-text-tertiary);
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .ss-bg-favorite-star:hover {
-      border-color: #FFB300;
-      color: #FFB300;
-      background: #FFFDE7;
+      border-color: var(--color-favorite-border);
+      color: var(--color-favorite-border);
+      background: var(--color-favorite-hover-bg);
     }
     .ss-bg-favorite-star.active {
-      border-color: #FFB300;
-      background: #FFF8E1;
-      color: #E65100;
+      border-color: var(--color-favorite-border);
+      background: var(--color-favorite-bg);
+      color: var(--color-favorite-text);
     }
     .ss-bg-favorite-star.registered {
-      border-color: #FFB300;
-      color: #FFB300;
+      border-color: var(--color-favorite-border);
+      color: var(--color-favorite-border);
     }
     .ss-bg-favorite-label {
       font-size: 11px;
-      color: #999;
+      color: var(--color-text-tertiary);
       align-self: center;
       margin-left: 4px;
     }
     .ss-bg-favorite-register-indicator {
       padding: 4px 8px;
       margin-bottom: 4px;
-      background: #FFF8E1;
-      border: 1px solid #FFB300;
+      background: var(--color-favorite-bg);
+      border: 1px solid var(--color-favorite-border);
       border-radius: 2px;
       font-size: 11px;
-      color: #E65100;
+      color: var(--color-favorite-text);
       text-align: center;
     }
     .ss-bg-form-group {
@@ -367,34 +470,38 @@ function getDialogStyles(): string {
     .ss-bg-form-label {
       display: block;
       font-size: 11px;
-      color: #666;
+      color: var(--color-text-secondary);
       margin-bottom: 2px;
     }
     .ss-bg-form-input {
       width: 100%;
       padding: 6px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-border-medium);
       border-radius: 2px;
+      color: var(--color-text-primary);
       font-size: 13px;
       box-sizing: border-box;
+      background: var(--color-bg-input);
     }
     .ss-bg-form-input:focus {
       outline: none;
-      border-color: #4CAF50;
+      border-color: var(--color-focus-ring);
     }
     .ss-bg-form-textarea {
       width: 100%;
       padding: 6px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--color-border-medium);
       border-radius: 2px;
+      color: var(--color-text-primary);
       font-size: 13px;
       box-sizing: border-box;
       resize: vertical;
       min-height: 40px;
+      background: var(--color-bg-input);
     }
     .ss-bg-form-textarea:focus {
       outline: none;
-      border-color: #4CAF50;
+      border-color: var(--color-focus-ring);
     }
     .ss-bg-password-item-row {
       display: flex;
@@ -409,23 +516,23 @@ function getDialogStyles(): string {
     .ss-bg-edit-btn {
       width: 32px;
       min-width: 32px;
-      background: #f5f5f5;
+      background: var(--color-btn-default);
       border: none;
       border-radius: 2px;
       cursor: pointer;
       font-size: 12px;
-      color: #666;
+      color: var(--color-text-secondary);
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .ss-bg-edit-btn:hover {
-      background: #e0e0e0;
-      color: #333;
+      background: var(--color-btn-default-hover);
+      color: var(--color-text-primary);
     }
     .ss-bg-success-message {
-      color: #2e7d32;
-      background: #e8f5e9;
+      color: var(--color-success-text);
+      background: var(--color-success-bg);
       padding: 8px;
       border-radius: 2px;
       margin-top: 4px;
@@ -479,13 +586,25 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
   // ダイアログコンテンツを作成
   dialogContent = document.createElement('div');
   dialogContent.className = 'ss-bg-dialog-content';
+
+  // テーマ設定に基づいてhostのdata-themeと外観色を決定
+  const theme = await getThemeSetting();
+  if (theme === 'light' || theme === 'dark') {
+    dialogShadowHost.setAttribute('data-theme', theme);
+  }
+  const isDarkMode = theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const dialogBg = isDarkMode ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+  const dialogText = isDarkMode ? '#e0e0e0' : '#333333';
+  const dialogBorder = isDarkMode ? '#444444' : '#cccccc';
+
   dialogContent.style.cssText = `
     position: absolute;
     top: ${dialogPos.top}px;
     left: ${dialogPos.left}px;
-    background: rgba(255, 255, 255, 0.95);
+    background: ${dialogBg};
+    color: ${dialogText};
     backdrop-filter: blur(2px);
-    border: 1px solid #ccc;
+    border: 1px solid ${dialogBorder};
     border-radius: 4px;
     padding: 8px;
     width: 250px;
@@ -861,10 +980,10 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
       updatedAt: Date.now()
     };
     
-    // Backgroundに保存を依頼
+    // Backgroundに更新を依頼（既存エントリの上書き）
     const response = await chrome.runtime.sendMessage({
-      type: 'SAVE_PASSWORD',
-      payload: updatedEntry
+      type: 'UPDATE_PASSWORD',
+      payload: { id: entry.id, entry: updatedEntry }
     });
     
     if (response.success) {
@@ -1213,9 +1332,15 @@ function closeExistingDialogIfOpen(): void {
 /**
  * ダイアログ用のShadow DOMホストを作成
  */
-function createDialogHost(hostId: string): void {
+async function createDialogHost(hostId: string): Promise<void> {
   dialogShadowHost = document.createElement('div');
   dialogShadowHost.id = hostId;
+  // Shadow hostにテーマを反映。ダイアログのCSSはdata-theme属性で切り替える。
+  // light/darkは明示、autoは属性なし（システム設定に従う）。
+  const theme = await getThemeSetting();
+  if (theme === 'light' || theme === 'dark') {
+    dialogShadowHost.setAttribute('data-theme', theme);
+  }
   dialogShadowHost.style.cssText = `
     position: fixed;
     top: 0;
@@ -1278,9 +1403,9 @@ function renderDialogContent(css: string, contentElement: HTMLElement): void {
 /**
  * エラーダイアログを表示
  */
-function showErrorDialog(message: string): void {
+async function showErrorDialog(message: string): Promise<void> {
   closeExistingDialogIfOpen();
-  createDialogHost('ss-bg-error-dialog-host');
+  await createDialogHost('ss-bg-error-dialog-host');
 
   const dialogContent = document.createElement('div');
   dialogContent.className = 'ss-bg-error-dialog-content';
@@ -1307,13 +1432,41 @@ function showErrorDialog(message: string): void {
   dialogContent.appendChild(closeBtn);
 
   const css = `
+    :host {
+      --color-bg-elevated: #ffffff;
+      --color-text-primary: #333333;
+      --color-border-error: #d32f2f;
+      --color-btn-default: #f5f5f5;
+      --color-btn-default-hover: #e0e0e0;
+    }
+
+    /* 明示的にダーク指定された場合 */
+    :host[data-theme='dark'] {
+      --color-bg-elevated: #333333;
+      --color-text-primary: #e0e0e0;
+      --color-border-error: #d32f2f;
+      --color-btn-default: #424242;
+      --color-btn-default-hover: #616161;
+    }
+
+    /* auto（システム設定）の場合のみ、OS設定に従う */
+    @media (prefers-color-scheme: dark) {
+      :host:not([data-theme='light']):not([data-theme='dark']) {
+        --color-bg-elevated: #333333;
+        --color-text-primary: #e0e0e0;
+        --color-border-error: #d32f2f;
+        --color-btn-default: #424242;
+        --color-btn-default-hover: #616161;
+      }
+    }
+
     .ss-bg-error-dialog-content {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: #fff;
-      border: 1px solid #d32f2f;
+      background: var(--color-bg-elevated);
+      border: 1px solid var(--color-border-error);
       border-radius: 4px;
       padding: 16px;
       min-width: 280px;
@@ -1324,28 +1477,28 @@ function showErrorDialog(message: string): void {
       font-size: 14px;
     }
     .ss-bg-error-title {
-      color: #d32f2f;
+      color: var(--color-border-error);
       font-weight: 600;
       margin-bottom: 8px;
       font-size: 16px;
     }
     .ss-bg-error-message {
-      color: #333;
+      color: var(--color-text-primary);
       line-height: 1.5;
       margin-bottom: 16px;
     }
     .ss-bg-error-close-btn {
       width: 100%;
       padding: 8px;
-      background: #f5f5f5;
+      background: var(--color-btn-default);
       border: none;
       border-radius: 2px;
       cursor: pointer;
       font-size: 13px;
-      color: #333;
+      color: var(--color-text-primary);
     }
     .ss-bg-error-close-btn:hover {
-      background: #e0e0e0;
+      background: var(--color-btn-default-hover);
     }
   `;
 
@@ -1355,11 +1508,11 @@ function showErrorDialog(message: string): void {
 /**
  * 確認ダイアログを表示
  */
-function showConfirmDialog(message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    closeExistingDialogIfOpen();
-    createDialogHost('ss-bg-confirm-dialog-host');
+async function showConfirmDialog(message: string): Promise<boolean> {
+  closeExistingDialogIfOpen();
+  await createDialogHost('ss-bg-confirm-dialog-host');
 
+  return new Promise<boolean>((resolve) => {
     const dialogContent = document.createElement('div');
     dialogContent.className = 'ss-bg-confirm-dialog-content';
     dialogContent.setAttribute('role', 'dialog');
@@ -1402,13 +1555,50 @@ function showConfirmDialog(message: string): Promise<boolean> {
     dialogContent.appendChild(buttonsContainer);
 
     const css = `
+      :host {
+        --color-bg-elevated: #ffffff;
+        --color-text-primary: #333333;
+        --color-border-medium: #cccccc;
+        --color-btn-default: #f5f5f5;
+        --color-btn-default-hover: #e0e0e0;
+        --color-btn-primary: #4CAF50;
+        --color-btn-primary-hover: #45a049;
+        --color-text-inverse: #ffffff;
+      }
+
+      /* 明示的にダーク指定された場合 */
+      :host[data-theme='dark'] {
+        --color-bg-elevated: #333333;
+        --color-text-primary: #e0e0e0;
+        --color-border-medium: #444444;
+        --color-btn-default: #424242;
+        --color-btn-default-hover: #616161;
+        --color-btn-primary: #4CAF50;
+        --color-btn-primary-hover: #66bb6a;
+        --color-text-inverse: #ffffff;
+      }
+
+      /* auto（システム設定）の場合のみ、OS設定に従う */
+      @media (prefers-color-scheme: dark) {
+        :host:not([data-theme='light']):not([data-theme='dark']) {
+          --color-bg-elevated: #333333;
+          --color-text-primary: #e0e0e0;
+          --color-border-medium: #444444;
+          --color-btn-default: #424242;
+          --color-btn-default-hover: #616161;
+          --color-btn-primary: #4CAF50;
+          --color-btn-primary-hover: #66bb6a;
+          --color-text-inverse: #ffffff;
+        }
+      }
+
       .ss-bg-confirm-dialog-content {
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: #fff;
-        border: 1px solid #ccc;
+        background: var(--color-bg-elevated);
+        border: 1px solid var(--color-border-medium);
         border-radius: 4px;
         padding: 16px;
         min-width: 300px;
@@ -1422,10 +1612,10 @@ function showConfirmDialog(message: string): Promise<boolean> {
         font-weight: 600;
         margin-bottom: 12px;
         font-size: 16px;
-        color: #333;
+        color: var(--color-text-primary);
       }
       .ss-bg-confirm-message {
-        color: #333;
+        color: var(--color-text-primary);
         line-height: 1.6;
         margin-bottom: 16px;
         white-space: pre-wrap;
@@ -1443,18 +1633,18 @@ function showConfirmDialog(message: string): Promise<boolean> {
         font-size: 13px;
       }
       .ss-bg-confirm-cancel {
-        background: #f5f5f5;
-        color: #333;
+        background: var(--color-btn-default);
+        color: var(--color-text-primary);
       }
       .ss-bg-confirm-cancel:hover {
-        background: #e0e0e0;
+        background: var(--color-btn-default-hover);
       }
       .ss-bg-confirm-ok {
-        background: #4CAF50;
-        color: white;
+        background: var(--color-btn-primary);
+        color: var(--color-text-inverse);
       }
       .ss-bg-confirm-ok:hover {
-        background: #45a049;
+        background: var(--color-btn-primary-hover);
       }
     `;
 
@@ -1523,7 +1713,7 @@ function setupMessageListener(): void {
 async function handleFillPassword(entry: PasswordEntry): Promise<void> {
   const form = lastFocusedInput?.closest('form');
   if (!form) {
-    showErrorDialog('対象のフォームを特定できませんでした。入力したいフォーム内のフィールドを一度クリックしてから再度お試しください。');
+    await showErrorDialog('対象のフォームを特定できませんでした。入力したいフォーム内のフィールドを一度クリックしてから再度お試しください。');
     return;
   }
 
@@ -1660,7 +1850,7 @@ async function handleFillField(
 async function handleSaveCurrentForm(): Promise<void> {
   const forms = detectForms();
   if (forms.length === 0) {
-    showErrorDialog('フォームが見つかりません');
+    await showErrorDialog('フォームが見つかりません');
     return;
   }
 
@@ -1668,22 +1858,28 @@ async function handleSaveCurrentForm(): Promise<void> {
   const formData = captureFormData(forms[0]);
 
   if (!formData.password) {
-    showErrorDialog('パスワードフィールドが見つかりませんでした');
+    await showErrorDialog('パスワードフィールドが見つかりませんでした');
     return;
   }
 
-  showSaveFormDialog(formData);
+  await showSaveFormDialog(formData);
 }
 
 /**
  * フォーム保存ダイアログを表示
  */
-function showSaveFormDialog(formData: Partial<PasswordEntry>): void {
+async function showSaveFormDialog(formData: Partial<PasswordEntry>): Promise<void> {
   closeExistingDialogIfOpen();
-  createDialogHost('ss-bg-save-form-dialog-host');
+  await createDialogHost('ss-bg-save-form-dialog-host');
 
   const content = document.createElement('div');
   content.className = 'ss-bg-dialog-content';
+
+  // テーマ設定に基づいて色を決定
+  const isDarkMode = await isDarkModeEnabled();
+  const dialogBg = isDarkMode ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+  const dialogText = isDarkMode ? '#e0e0e0' : '#333333';
+
   content.style.cssText = `
     position: fixed;
     top: 50%;
@@ -1691,6 +1887,8 @@ function showSaveFormDialog(formData: Partial<PasswordEntry>): void {
     transform: translate(-50%, -50%);
     width: 320px;
     max-height: 80vh;
+    background: ${dialogBg};
+    color: ${dialogText};
     overflow-y: auto;
     pointer-events: auto;
   `;
@@ -2074,9 +2272,10 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
   };
 
   try {
+    // 既存エントリのURL更新なのでUPDATE_PASSWORD（上書き）
     const response = await chrome.runtime.sendMessage({
-      type: 'SAVE_PASSWORD',
-      payload: updatedEntry
+      type: 'UPDATE_PASSWORD',
+      payload: { id: entry.id, entry: updatedEntry }
     });
 
     if (response.success) {
@@ -2092,4 +2291,11 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
  */
 export function getLastFocusedInput(): HTMLInputElement | null {
   return lastFocusedInput;
+}
+
+/**
+ * ダイアログ共通CSSを取得（テスト用）
+ */
+export function getDialogStylesForTest(): string {
+  return getDialogStyles();
 }
