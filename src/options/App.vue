@@ -27,7 +27,10 @@
       </section>
 
       <!-- テーマ設定 -->
-      <section class="section">
+      <section :class="['section', 'theme-section', { 'section--saved': isSectionHighlighted('theme') }]">
+        <Transition name="inline-notice">
+          <span v-if="isSectionHighlighted('theme')" class="inline-notice">{{ highlightMessage() }}</span>
+        </Transition>
         <h2>テーマ設定</h2>
         <div class="theme-options">
           <label class="theme-option">
@@ -63,7 +66,10 @@
           </div>
           
           <div v-else class="password-list">
-            <div v-for="entry in passwords" :key="entry.id" class="password-item">
+            <div v-for="entry in passwords" :key="entry.id" :class="['password-item', { 'password-item--saved': isEntryHighlighted(entry.id) }]">
+              <Transition name="inline-notice">
+                <span v-if="isEntryHighlighted(entry.id)" class="inline-notice">{{ highlightMessage() }}</span>
+              </Transition>
               <div class="password-info">
                 <h3>{{ entry.title }}</h3>
                 <p class="username">ユーザー名: {{ entry.username }}</p>
@@ -174,7 +180,10 @@
       </div>
       
       <!-- 設定 -->
-      <section class="section">
+      <section :class="['section', 'settings-section', { 'section--saved': isSectionHighlighted('settings') }]">
+        <Transition name="inline-notice">
+          <span v-if="isSectionHighlighted('settings')" class="inline-notice">{{ highlightMessage() }}</span>
+        </Transition>
         <h2>設定</h2>
 
         <div class="form-group">
@@ -227,7 +236,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import type { Message, Response } from '@/types/message';
 import type { PasswordEntry, AppSettings } from '@/types/storage';
 import { registerCredential, authenticate as webauthnAuthenticate } from '@/utils/webauthn';
@@ -280,6 +289,37 @@ function removeToast(id: number): void {
   }
 }
 
+// 保存ハイライト（該当アイテム/セクションの背景色変更 + インライン通知）
+type HighlightTarget =
+  | { kind: 'entry'; id: string; message: string }
+  | { kind: 'section'; name: 'settings' | 'theme'; message: string };
+
+const highlight = ref<HighlightTarget | null>(null);
+let highlightSeq = 0;
+
+function triggerHighlight(target: HighlightTarget, timeoutMs = 2500): void {
+  const seq = ++highlightSeq;
+  highlight.value = target;
+  window.setTimeout(() => {
+    // 新しいハイライトが発火済みなら古いタイマーは無視
+    if (highlightSeq === seq) {
+      highlight.value = null;
+    }
+  }, timeoutMs);
+}
+
+function isEntryHighlighted(id: string): boolean {
+  return highlight.value?.kind === 'entry' && highlight.value.id === id;
+}
+
+function isSectionHighlighted(name: 'settings' | 'theme'): boolean {
+  return highlight.value?.kind === 'section' && highlight.value.name === name;
+}
+
+function highlightMessage(): string {
+  return highlight.value?.message ?? '';
+}
+
 const showAddForm = ref(false);
 const editingEntry = ref<PasswordEntry | null>(null);
 const deletingEntry = ref<PasswordEntry | null>(null);
@@ -325,7 +365,7 @@ async function saveThemeSetting(): Promise<void> {
     // マウント時の古い theme を UPDATE_SETTINGS で送信し、テーマが復元されてしまう。
     settings.value.theme = themeSetting.value;
     applyTheme(themeSetting.value);
-    pushToast('success', 'テーマを適用しました');
+    triggerHighlight({ kind: 'section', name: 'theme', message: 'テーマを適用しました' });
   } catch (e) {
     console.error('Failed to save theme setting:', e);
     pushToast('error', e instanceof Error ? e.message : 'テーマ設定に失敗しました');
@@ -577,9 +617,17 @@ async function saveEntry(): Promise<void> {
     );
 
     if (response.success) {
+      const savedEntryId = entry.id;
+      const wasEditing = isEditing;
       await loadPasswords();
       cancelEdit();
-      pushToast('success', isEditing ? '情報を更新しました' : '情報を追加しました');
+      // リスト再描画の通常状態を一度描画してからハイライト適用し、CSS transition を発火させる
+      await nextTick();
+      triggerHighlight({
+        kind: 'entry',
+        id: savedEntryId,
+        message: wasEditing ? '情報を更新しました' : '情報を追加しました'
+      });
     } else {
       formError.value = response.error || '保存に失敗しました';
     }
@@ -622,7 +670,7 @@ async function saveSettings(): Promise<void> {
     });
 
     if (response.success) {
-      pushToast('success', '設定を保存しました');
+      triggerHighlight({ kind: 'section', name: 'settings', message: '設定を保存しました' });
     } else {
       pushToast('error', response.error || '設定保存に失敗しました');
     }
@@ -1077,5 +1125,63 @@ h2 {
 
 .additional-fields-items li {
   margin: 2px 0;
+}
+
+/* === 保存ハイライト + インライン通知 === */
+.password-item,
+.section.theme-section,
+.section.settings-section {
+  position: relative;
+  transition: background-color 0.3s ease;
+}
+
+.password-item--saved,
+.section--saved {
+  background: var(--color-success-bg);
+}
+
+.inline-notice {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--color-success-text);
+  color: var(--color-text-inverse);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 5;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.inline-notice-enter-active,
+.inline-notice-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.inline-notice-enter-from,
+.inline-notice-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .password-item,
+  .section.theme-section,
+  .section.settings-section {
+    transition: background-color 0.15s ease;
+  }
+
+  .inline-notice-enter-active,
+  .inline-notice-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  .inline-notice-enter-from,
+  .inline-notice-leave-to {
+    transform: none;
+  }
 }
 </style>
