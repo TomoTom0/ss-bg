@@ -887,4 +887,154 @@ describe('Options App', () => {
       expect(wrapper.text()).toContain('保存に失敗しました');
     });
   });
+
+  describe('トースト通知', () => {
+    const testPasswords: PasswordEntry[] = [
+      {
+        id: '1',
+        title: 'テストサイト',
+        username: 'user',
+        password: 'pass',
+        urls: ['https://example.com'],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+    ];
+
+    it('パスワード削除成功時にsuccessトーストが表示される', async () => {
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: true, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: testPasswords });
+        }
+        if (message.type === 'DELETE_PASSWORD') {
+          return Promise.resolve({ success: true });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const deleteButton = wrapper.findAll('.password-actions .btn-danger').find(b => b.text() === '削除');
+      await deleteButton?.trigger('click');
+      await flushPromises();
+
+      const confirmDeleteButton = wrapper.find('.modal .btn-danger');
+      await confirmDeleteButton.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.find('.toast--success').exists()).toBe(true);
+      expect(wrapper.find('.toast__message').text()).toContain('削除しました');
+    });
+
+    it('パスワード削除失敗時にerrorトーストが表示されUIは維持される', async () => {
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: true, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: testPasswords });
+        }
+        if (message.type === 'DELETE_PASSWORD') {
+          return Promise.resolve({ success: false, error: '削除エラー' });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const deleteButton = wrapper.findAll('.password-actions .btn-danger').find(b => b.text() === '削除');
+      await deleteButton?.trigger('click');
+      await flushPromises();
+
+      const confirmDeleteButton = wrapper.find('.modal .btn-danger');
+      await confirmDeleteButton.trigger('click');
+      await flushPromises();
+
+      // トーストでエラー表示
+      expect(wrapper.find('.toast--error').exists()).toBe(true);
+      // UI全体は維持される（保存失敗で error.value に書き込まれ画面が消えないことの回帰）
+      expect(wrapper.text()).toContain('bg-ss 設定');
+      expect(wrapper.text()).toContain('保存済み情報');
+    });
+
+    it('設定保存失敗時にerrorトーストが表示されUIは維持される', async () => {
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: true, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: [] });
+        }
+        if (message.type === 'UPDATE_SETTINGS') {
+          return Promise.resolve({ success: false, error: '設定保存エラー' });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
+      await saveSettingsButton?.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.find('.toast--error').exists()).toBe(true);
+      expect(wrapper.text()).toContain('bg-ss 設定');
+      expect(wrapper.text()).toContain('保存済み情報');
+    });
+
+    it('トーストのクローズボタンで即時非表示になる', async () => {
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: true, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: [] });
+        }
+        if (message.type === 'UPDATE_SETTINGS') {
+          return Promise.resolve({ success: true });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
+      await saveSettingsButton?.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.find('.toast--success').exists()).toBe(true);
+
+      await wrapper.find('.toast__close').trigger('click');
+      await flushPromises();
+
+      expect(wrapper.find('.toast--success').exists()).toBe(false);
+    });
+  });
 });

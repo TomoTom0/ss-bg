@@ -1,6 +1,7 @@
 <template>
   <div class="options">
     <h1>bg-ss 設定</h1>
+    <ToastContainer :toasts="toasts" @remove="removeToast" />
     
     <div v-if="error" class="error">
       エラー: {{ error }}
@@ -201,8 +202,6 @@
 
         <button @click="saveSettings" class="btn btn-primary">設定を保存</button>
 
-        <div v-if="settingsSaved" class="success">設定を保存しました</div>
-
         <div class="form-group" style="margin-top: 20px;">
           <label>キーボードショートカット</label>
           <p style="font-size: 12px; color: #666; margin: 4px 0;">
@@ -234,6 +233,8 @@ import type { PasswordEntry, AppSettings } from '@/types/storage';
 import { registerCredential, authenticate as webauthnAuthenticate } from '@/utils/webauthn';
 import { storage } from '@/utils/storage';
 import { normalizeUrl } from '@/utils/url-matcher';
+import ToastContainer from '@/components/ToastContainer.vue';
+import type { Toast, ToastType } from '@/components/toast';
 
 const passwords = ref<PasswordEntry[]>([]);
 const settings = ref<AppSettings>({
@@ -256,10 +257,28 @@ const sessionTimeoutOptions = [
 const loading = ref(true);
 const error = ref<string | null>(null);
 const formError = ref<string | null>(null);
-const settingsSaved = ref(false);
 const authError = ref<string | null>(null);
 const isAuthenticated = ref(false);
 const clearDataConfirm = ref(false);
+
+// トースト通知
+const toasts = ref<Toast[]>([]);
+let toastSeq = 0;
+
+function pushToast(type: ToastType, message: string, timeoutMs = 3500): void {
+  const id = ++toastSeq;
+  toasts.value.push({ id, type, message });
+  if (timeoutMs > 0) {
+    window.setTimeout(() => removeToast(id), timeoutMs);
+  }
+}
+
+function removeToast(id: number): void {
+  const idx = toasts.value.findIndex(t => t.id === id);
+  if (idx >= 0) {
+    toasts.value.splice(idx, 1);
+  }
+}
 
 const showAddForm = ref(false);
 const editingEntry = ref<PasswordEntry | null>(null);
@@ -306,8 +325,10 @@ async function saveThemeSetting(): Promise<void> {
     // マウント時の古い theme を UPDATE_SETTINGS で送信し、テーマが復元されてしまう。
     settings.value.theme = themeSetting.value;
     applyTheme(themeSetting.value);
+    pushToast('success', 'テーマを適用しました');
   } catch (e) {
     console.error('Failed to save theme setting:', e);
+    pushToast('error', e instanceof Error ? e.message : 'テーマ設定に失敗しました');
   }
 }
 
@@ -426,12 +447,12 @@ async function clearAllData(): Promise<void> {
   try {
     await storage.clearAll();
     clearDataConfirm.value = false;
-    error.value = '全てのデータをクリアしました。ページを再読み込みしてください。';
+    pushToast('info', '全てのデータをクリアしました。ページを再読み込みします');
     setTimeout(() => {
       window.location.reload();
     }, 2000);
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'データクリアに失敗しました';
+    pushToast('error', e instanceof Error ? e.message : 'データクリアに失敗しました');
   }
 }
 
@@ -558,6 +579,7 @@ async function saveEntry(): Promise<void> {
     if (response.success) {
       await loadPasswords();
       cancelEdit();
+      pushToast('success', isEditing ? '情報を更新しました' : '情報を追加しました');
     } else {
       formError.value = response.error || '保存に失敗しました';
     }
@@ -580,19 +602,19 @@ async function deleteEntry(): Promise<void> {
     });
     
     if (response.success) {
+      const entryTitle = deletingEntry.value.title;
       await loadPasswords();
       deletingEntry.value = null;
+      pushToast('success', `「${entryTitle}」を削除しました`);
     } else {
-      error.value = response.error || '削除に失敗しました';
+      pushToast('error', response.error || '削除に失敗しました');
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '削除エラー';
+    pushToast('error', e instanceof Error ? e.message : '削除エラー');
   }
 }
 
 async function saveSettings(): Promise<void> {
-  settingsSaved.value = false;
-
   try {
     const response = await sendMessage({
       type: 'UPDATE_SETTINGS',
@@ -600,15 +622,12 @@ async function saveSettings(): Promise<void> {
     });
 
     if (response.success) {
-      settingsSaved.value = true;
-      setTimeout(() => {
-        settingsSaved.value = false;
-      }, 3000);
+      pushToast('success', '設定を保存しました');
     } else {
-      error.value = response.error || '設定保存に失敗しました';
+      pushToast('error', response.error || '設定保存に失敗しました');
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '設定保存エラー';
+    pushToast('error', e instanceof Error ? e.message : '設定保存エラー');
   }
 }
 
