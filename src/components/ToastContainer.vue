@@ -88,11 +88,11 @@ defineEmits<{ (e: 'remove', id: number): void }>();
 
 /* 入場: フェード + 上からスライドイン */
 .toast-enter-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .toast-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
 .toast-enter-from {
@@ -108,7 +108,7 @@ defineEmits<{ (e: 'remove', id: number): void }>();
 
 /* 複数トーストの整列移動 */
 .toast-move {
-  transition: transform 0.25s ease;
+  transition: transform 0.15s ease;
 }
 
 /* アニメーションを抑える設定への配慮 */
@@ -116,7 +116,7 @@ defineEmits<{ (e: 'remove', id: number): void }>();
   .toast-enter-active,
   .toast-leave-active,
   .toast-move {
-    transition: opacity 0.15s ease;
+    transition: opacity 0.1s ease;
   }
 
   .toast-enter-from,

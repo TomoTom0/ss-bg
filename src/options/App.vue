@@ -274,7 +274,7 @@ const clearDataConfirm = ref(false);
 const toasts = ref<Toast[]>([]);
 let toastSeq = 0;
 
-function pushToast(type: ToastType, message: string, timeoutMs = 3500): void {
+function pushToast(type: ToastType, message: string, timeoutMs = 2500): void {
   const id = ++toastSeq;
   toasts.value.push({ id, type, message });
   if (timeoutMs > 0) {
@@ -297,7 +297,7 @@ type HighlightTarget =
 const highlight = ref<HighlightTarget | null>(null);
 let highlightSeq = 0;
 
-function triggerHighlight(target: HighlightTarget, timeoutMs = 2500): void {
+function triggerHighlight(target: HighlightTarget, timeoutMs = 1500): void {
   const seq = ++highlightSeq;
   highlight.value = target;
   window.setTimeout(() => {
@@ -1132,7 +1132,7 @@ h2 {
 .section.theme-section,
 .section.settings-section {
   position: relative;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.15s ease;
 }
 
 .password-item--saved,
@@ -1144,11 +1144,11 @@ h2 {
   position: absolute;
   top: 8px;
   right: 8px;
-  background: var(--color-success-text);
+  background: var(--color-btn-primary);
   color: var(--color-text-inverse);
   padding: 4px 10px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   pointer-events: none;
   z-index: 5;
@@ -1158,7 +1158,7 @@ h2 {
 
 .inline-notice-enter-active,
 .inline-notice-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
 .inline-notice-enter-from,
@@ -1171,12 +1171,12 @@ h2 {
   .password-item,
   .section.theme-section,
   .section.settings-section {
-    transition: background-color 0.15s ease;
+    transition: background-color 0.1s ease;
   }
 
   .inline-notice-enter-active,
   .inline-notice-leave-active {
-    transition: opacity 0.15s ease;
+    transition: opacity 0.1s ease;
   }
 
   .inline-notice-enter-from,

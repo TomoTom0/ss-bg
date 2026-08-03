@@ -1186,7 +1186,7 @@ describe('Options App', () => {
 
         expect(wrapper.find('.password-item--saved').exists()).toBe(true);
 
-        vi.advanceTimersByTime(2500);
+        vi.advanceTimersByTime(1500);
         await flushPromises();
 
         expect(wrapper.find('.password-item--saved').exists()).toBe(false);
