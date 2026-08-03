@@ -1163,6 +1163,8 @@ h2 {
 .password-item--saved::after,
 .section--saved::after {
   transform: translateX(100%);
+  /* 入場時は即座に移動して shine を見せない（開始演出は簡素に） */
+  transition: none;
 }
 
 .inline-notice {
