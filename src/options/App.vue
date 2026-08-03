@@ -1132,12 +1132,15 @@ h2 {
 .section.theme-section,
 .section.settings-section {
   position: relative;
-  transition: background-color 0.15s ease;
+  /* ハイライト解除時は、インライン通知が右へ流れる退場を見せてから色を戻す */
+  transition: background-color 0.15s ease 0.1s;
 }
 
 .password-item--saved,
 .section--saved {
   background: var(--color-success-bg);
+  /* ハイライト付与時は delay なしで即フェードイン */
+  transition: background-color 0.15s ease;
 }
 
 .inline-notice {
@@ -1161,16 +1164,23 @@ h2 {
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-.inline-notice-enter-from,
-.inline-notice-leave-to {
+.inline-notice-enter-from {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* 退場: 右へ流れるそぶりを見せる */
+.inline-notice-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .password-item,
   .section.theme-section,
-  .section.settings-section {
+  .section.settings-section,
+  .password-item--saved,
+  .section--saved {
     transition: background-color 0.1s ease;
   }
 
