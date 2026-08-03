@@ -1132,8 +1132,9 @@ h2 {
 .section.theme-section,
 .section.settings-section {
   position: relative;
-  /* ハイライト解除時は、インライン通知が右へ流れる退場を見せてから色を戻す */
-  transition: background-color 0.15s ease 0.1s;
+  overflow: hidden;
+  /* ハイライト解除時は、白みが左へ走る退場を見せてから色を戻す */
+  transition: background-color 0.15s ease 0.15s;
 }
 
 .password-item--saved,
@@ -1141,6 +1142,27 @@ h2 {
   background: var(--color-success-bg);
   /* ハイライト付与時は delay なしで即フェードイン */
   transition: background-color 0.15s ease;
+}
+
+/* 白みが走る演出（退場時に左へ流れる） */
+.password-item::after,
+.section.theme-section::after,
+.section.settings-section::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to left, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  pointer-events: none;
+}
+
+.password-item--saved::after,
+.section--saved::after {
+  transform: translateX(100%);
 }
 
 .inline-notice {
@@ -1169,10 +1191,10 @@ h2 {
   transform: translateY(-4px);
 }
 
-/* 退場: 右へ流れるそぶりを見せる */
+/* 退場: 左へ流れながら消える */
 .inline-notice-leave-to {
   opacity: 0;
-  transform: translateX(12px);
+  transform: translateX(-12px);
 }
 
 @media (prefers-reduced-motion: reduce) {
