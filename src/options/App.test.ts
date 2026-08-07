@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import App from './App.vue';
 import type { PasswordEntry, AppSettings } from '@/types/storage';
+import { authenticate as webauthnAuthenticate } from '@/utils/webauthn';
 
 // Chrome APIのモック
 const mockChromeRuntimeSendMessage = vi.fn();
@@ -121,23 +122,41 @@ describe('Options App', () => {
   });
 
   describe('認証', () => {
-    it('未認証時は認証を促すメッセージが表示される', async () => {
+    it('未認証時は Auth タブに未認証バッジと案内が表示される', async () => {
       setupDefaultMocks({ authenticated: false, passwords: [] });
 
       const wrapper = mount(App);
       await flushPromises();
 
-      expect(wrapper.text()).toContain('未認証');
-      expect(wrapper.text()).toContain('認証する');
+      // 認証状態は Auth タブラベル右のバッジに表示
+      expect(wrapper.find('#tab-auth').text()).toContain('未認証');
+      // パネル内の案内（Auth タブ押下で認証開始を促す）
+      expect(wrapper.text()).toContain('Auth タブを押して認証を開始');
     });
 
-    it('認証済み時は認証済みメッセージが表示される', async () => {
+    it('未認証時に Auth タブを押すと認証が開始される', async () => {
+      setupDefaultMocks({ authenticated: false, passwords: [] });
+      const authMock = vi.mocked(webauthnAuthenticate);
+      authMock.mockClear();
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('#tab-auth').trigger('click');
+      await flushPromises();
+
+      expect(authMock).toHaveBeenCalled();
+    });
+
+    it('認証済み時は Auth タブに認証済みバッジとロック操作が表示される', async () => {
       setupDefaultMocks({ authenticated: true, passwords: [] });
 
       const wrapper = mount(App);
       await flushPromises();
 
-      expect(wrapper.text()).toContain('認証済み');
+      // 認証状態は Auth タブラベル右のバッジに表示
+      expect(wrapper.find('#tab-auth').text()).toContain('認証済み');
+      // パネル内にセッションロック操作
       expect(wrapper.text()).toContain('セッションをロック');
     });
 
@@ -148,6 +167,51 @@ describe('Options App', () => {
       await flushPromises();
 
       expect(wrapper.text()).toContain('情報管理機能を使用するには認証が必要です');
+    });
+
+    it('認証済み時は Auth タブの右にセッションロックボタンが表示される', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+      expect(wrapper.find('.session-lock-btn').exists()).toBe(true);
+    });
+
+    it('未認証時はセッションロックボタンが表示されない', async () => {
+      setupDefaultMocks({ authenticated: false, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+      expect(wrapper.find('.session-lock-btn').exists()).toBe(false);
+    });
+
+    it('初期タブが Auth で未認証ならマウント時に認証が開始される', async () => {
+      localStorage.setItem('ss-bg-options-active-tab', 'auth');
+      setupDefaultMocks({ authenticated: false, passwords: [] });
+      const authMock = vi.mocked(webauthnAuthenticate);
+      authMock.mockClear();
+      mount(App);
+      await flushPromises();
+      expect(authMock).toHaveBeenCalled();
+    });
+
+    it('セッションロックボタンをクリックすると確認ダイアログ後にロックメッセージを送信する', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+      mockChromeRuntimeSendMessage.mockClear();
+      // ロックアイコンをクリック → 確認ダイアログが開く
+      await wrapper.find('.session-lock-btn').trigger('click');
+      await flushPromises();
+      // この時点ではまだ LOCK_SESSION は送信されない
+      expect(mockChromeRuntimeSendMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'LOCK_SESSION' })
+      );
+      // 確認ダイアログの「ロック」ボタンをクリック
+      const confirmButton = wrapper.findAll('.modal .btn-warning').find(b => b.text() === 'ロック');
+      await confirmButton?.trigger('click');
+      await flushPromises();
+      expect(mockChromeRuntimeSendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'LOCK_SESSION' })
+      );
     });
   });
 
@@ -564,7 +628,7 @@ describe('Options App', () => {
       expect(wrapper.text()).toContain('スクリーンショット');
     });
 
-    it('設定を変更して保存できる', async () => {
+    it('セッションタイムアウト変更時に即時保存される', async () => {
       let settingsSaved = false;
       mockChromeRuntimeSendMessage.mockImplementation((message) => {
         if (message.type === 'GET_SESSION_STATUS') {
@@ -591,9 +655,8 @@ describe('Options App', () => {
       const wrapper = mount(App);
       await flushPromises();
 
-      // 設定を保存ボタンをクリック
-      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
-      await saveSettingsButton?.trigger('click');
+      // セッションタイムアウト select を変更（@change で即時保存）
+      await wrapper.find('select.select-input').setValue(60);
       await flushPromises();
 
       // UPDATE_SETTINGSメッセージが送信されたことを確認
@@ -638,9 +701,8 @@ describe('Options App', () => {
       await darkRadio.setValue(true);
       await flushPromises();
 
-      // 設定を保存ボタンをクリック
-      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
-      await saveSettingsButton?.trigger('click');
+      // セッションタイムアウトを変更（@change で UPDATE_SETTINGS 送信）
+      await wrapper.find('select.select-input').setValue(60);
       await flushPromises();
 
       // 同期されていれば新しいテーマ(dark)が送信される（同期漏れだと light が復元される）
@@ -673,12 +735,11 @@ describe('Options App', () => {
       const wrapper = mount(App);
       await flushPromises();
 
-      // 設定を保存ボタンをクリック
-      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
-      await saveSettingsButton?.trigger('click');
+      // セッションタイムアウト select を変更（@change で即時保存 + インライン通知）
+      await wrapper.find('select.select-input').setValue(60);
       await flushPromises();
 
-      expect(wrapper.text()).toContain('設定を保存しました');
+      expect(wrapper.text()).toContain('セッションタイムアウトを保存しました');
     });
 
     it('キーボードショートカット設定ボタンが動作する', async () => {
@@ -717,8 +778,8 @@ describe('Options App', () => {
       // 初期状態ではマスクされている
       expect(wrapper.vm.getPasswordDisplay('1')).toBe('••••••••');
 
-      // 表示ボタンをクリック
-      const toggleButton = wrapper.find('.btn-icon');
+      // 表示ボタンをクリック（パスワード行のピークボタン）
+      const toggleButton = wrapper.find('.password-field .btn-icon');
       await toggleButton.trigger('click');
       await flushPromises();
 
@@ -759,9 +820,14 @@ describe('Options App', () => {
       const wrapper = mount(App);
       await flushPromises();
 
-      // セッションをロックボタンをクリック
+      // セッションをロックボタンをクリック → 確認ダイアログが開く
       const lockButton = wrapper.findAll('.btn-warning').find(b => b.text() === 'セッションをロック');
       await lockButton?.trigger('click');
+      await flushPromises();
+
+      // 確認ダイアログの「ロック」ボタンをクリック
+      const confirmButton = wrapper.findAll('.btn-warning').find(b => b.text() === 'ロック');
+      await confirmButton?.trigger('click');
       await flushPromises();
 
       // LOCK_SESSIONメッセージが送信されたことを確認
@@ -994,13 +1060,13 @@ describe('Options App', () => {
       const wrapper = mount(App);
       await flushPromises();
 
-      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
-      await saveSettingsButton?.trigger('click');
+      // セッションタイムアウト select を変更（@change で即時保存失敗 → errorトースト）
+      await wrapper.find('select.select-input').setValue(60);
       await flushPromises();
 
       expect(wrapper.find('.toast--error').exists()).toBe(true);
       expect(wrapper.text()).toContain('bg-ss 設定');
-      expect(wrapper.text()).toContain('保存済み情報');
+      expect(wrapper.text()).toContain('セッションタイムアウト');
     });
 
     it('トーストのクローズボタンで即時非表示になる', async () => {
@@ -1115,12 +1181,12 @@ describe('Options App', () => {
       const wrapper = mount(App);
       await flushPromises();
 
-      const saveSettingsButton = wrapper.findAll('.btn-primary').find(b => b.text() === '設定を保存');
-      await saveSettingsButton?.trigger('click');
+      // セッションタイムアウト select を変更（@change で即時保存 + ハイライト）
+      await wrapper.find('select.select-input').setValue(60);
       await flushPromises();
 
-      expect(wrapper.find('.settings-section.section--saved').exists()).toBe(true);
-      expect(wrapper.find('.settings-section .inline-notice').text()).toContain('設定を保存しました');
+      expect(wrapper.find('.section--saved').exists()).toBe(true);
+      expect(wrapper.find('.inline-notice').text()).toContain('セッションタイムアウトを保存しました');
       expect(wrapper.find('.toast--success').exists()).toBe(false);
     });
 
@@ -1193,6 +1259,487 @@ describe('Options App', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('タブ切り替え', () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    it('4つのタブが表示される', async () => {
+      setupDefaultMocks();
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const tabButtons = wrapper.findAll('[role="tab"]');
+      expect(tabButtons).toHaveLength(4);
+      const labels = wrapper.findAll('[role="tab"] .tab-label').map(t => t.text());
+      expect(labels).toEqual(['General', 'Auth', 'Screenshot', 'Others']);
+    });
+
+    it('デフォルトで General タブがアクティブ', async () => {
+      setupDefaultMocks();
+      const wrapper = mount(App);
+      await flushPromises();
+
+      expect(wrapper.vm.activeTab).toBe('general');
+      const activeButton = wrapper.find('[role="tab"][aria-selected="true"]');
+      expect(activeButton.text()).toBe('General');
+    });
+
+    it('タブクリックでアクティブタブが切り替わる', async () => {
+      setupDefaultMocks();
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const authTab = wrapper.find('#tab-auth');
+      await authTab.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.vm.activeTab).toBe('auth');
+      expect(wrapper.find('[role="tab"][aria-selected="true"] .tab-label').text()).toBe('Auth');
+    });
+
+    it('アクティブタブが localStorage に永続化される', async () => {
+      setupDefaultMocks();
+      const wrapper = mount(App);
+      await flushPromises();
+
+      const othersTab = wrapper.find('#tab-others');
+      await othersTab.trigger('click');
+      await flushPromises();
+
+      expect(localStorage.getItem('ss-bg-options-active-tab')).toBe('others');
+    });
+
+    it('再マウント時に localStorage から最後のアクティブタブが復元される', async () => {
+      localStorage.setItem('ss-bg-options-active-tab', 'screenshot');
+
+      setupDefaultMocks();
+      const wrapper = mount(App);
+      await flushPromises();
+
+      expect(wrapper.vm.activeTab).toBe('screenshot');
+    });
+
+    it('無効なストレージ値は無視して「一般」にフォールバック', async () => {
+      localStorage.setItem('ss-bg-options-active-tab', 'invalid-tab');
+
+      setupDefaultMocks();
+      const wrapper = mount(App);
+      await flushPromises();
+
+      expect(wrapper.vm.activeTab).toBe('general');
+    });
+  });
+
+  describe('コピーボタン', () => {
+    const mockPasswords: PasswordEntry[] = [
+      {
+        id: '1',
+        title: 'テストサイト',
+        username: 'user1',
+        password: 'pass1',
+        urls: ['https://example.com'],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+    ];
+
+    it('ユーザー名コピーボタンでクリップボードへコピーされる', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true
+      });
+
+      setupDefaultMocks({ authenticated: true, passwords: mockPasswords });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // 先頭エントリのユーザーコピーボタン(.btn-copyの先頭)
+      const copyBtn = wrapper.findAll('.password-item .btn-copy')[0];
+      await copyBtn.trigger('click');
+      await flushPromises();
+
+      expect(writeText).toHaveBeenCalledWith('user1');
+      expect(wrapper.find('.toast--success').exists()).toBe(true);
+    });
+
+    it('パスワードコピーボタンで実値がコピーされる（マスク状態でも実値）', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true
+      });
+
+      setupDefaultMocks({ authenticated: true, passwords: mockPasswords });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // パスワード行のコピーボタン
+      const copyBtn = wrapper.find('.password-field .btn-copy');
+      await copyBtn.trigger('click');
+      await flushPromises();
+
+      expect(writeText).toHaveBeenCalledWith('pass1');
+    });
+  });
+
+  describe('機密フィールド', () => {
+    const sensitivePasswords: PasswordEntry[] = [
+      {
+        id: '1',
+        title: 'テストサイト',
+        username: 'user1',
+        password: 'pass1',
+        urls: ['https://example.com'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        additionalFields: [
+          { name: 'メモ', value: 'plain-value' },
+          { name: '秘密の質問', value: 'secret-answer', sensitive: true }
+        ]
+      }
+    ];
+
+    it('機密フィールドは一覧でマスク表示される', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: sensitivePasswords });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      expect(wrapper.text()).toContain('秘密の質問');
+      expect(wrapper.text()).toContain('plain-value'); // 非機密は実値
+      expect(wrapper.text()).not.toContain('secret-answer'); // 機密は隠す
+    });
+
+    it('機密フィールドのピークボタンで値を表示できる', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: sensitivePasswords });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // 機密フィールド(.field-item 内 .btn-icon)は2つ目の追加フィールド
+      const fieldItems = wrapper.findAll('.additional-fields-items .field-item');
+      const sensitiveItem = fieldItems[1];
+      await sensitiveItem.find('.btn-icon').trigger('click');
+      await flushPromises();
+
+      expect(wrapper.vm.isFieldVisible('1', 1)).toBe(true);
+      expect(wrapper.text()).toContain('secret-answer');
+    });
+
+    it('機密フィールドのピークは5分後に自動でマスクへ戻る', async () => {
+      vi.useFakeTimers();
+      try {
+        setupDefaultMocks({ authenticated: true, passwords: sensitivePasswords });
+        const wrapper = mount(App);
+        await flushPromises();
+
+        const fieldItems = wrapper.findAll('.additional-fields-items .field-item');
+        await fieldItems[1].find('.btn-icon').trigger('click');
+        await flushPromises();
+        expect(wrapper.vm.isFieldVisible('1', 1)).toBe(true);
+
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        await flushPromises();
+
+        expect(wrapper.vm.isFieldVisible('1', 1)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('パスワードピークも5分後に自動でマスクへ戻る', async () => {
+      vi.useFakeTimers();
+      try {
+        setupDefaultMocks({ authenticated: true, passwords: sensitivePasswords });
+        const wrapper = mount(App);
+        await flushPromises();
+
+        await wrapper.find('.password-field .btn-icon').trigger('click');
+        await flushPromises();
+        expect(wrapper.vm.isPasswordVisible('1')).toBe(true);
+
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        await flushPromises();
+
+        expect(wrapper.vm.isPasswordVisible('1')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('追加フィールドの機密チェックONで保存するとsensitiveが保存される', async () => {
+      let savedPayload: PasswordEntry | undefined;
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: true, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: [] });
+        }
+        if (message.type === 'SAVE_PASSWORD') {
+          savedPayload = message.payload as PasswordEntry;
+          return Promise.resolve({ success: true });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // 新規追加
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      // フィールド追加
+      const addFieldButton = wrapper.findAll('.btn').find(b => b.text().includes('フィールドを追加'));
+      await addFieldButton?.trigger('click');
+      await flushPromises();
+
+      // フィールド名と値
+      await wrapper.find('.field-name-input').setValue('PIN');
+      await wrapper.find('.field-value-input').setValue('1234');
+      // 機密チェックON
+      await wrapper.find('.field-sensitive-label input[type="checkbox"]').setValue(true);
+
+      // 必須項目
+      const textInputs = wrapper.findAll('input[type="text"]');
+      await textInputs[0].setValue('タイトル');
+      await textInputs[1].setValue('user');
+      await wrapper.find('input[type="password"]').setValue('pass');
+
+      const saveButton = wrapper.findAll('.btn-primary').find(b => b.text() === '保存');
+      await saveButton?.trigger('click');
+      await flushPromises();
+
+      expect(savedPayload).toBeDefined();
+      expect(savedPayload!.additionalFields).toBeDefined();
+      expect(savedPayload!.additionalFields![0].sensitive).toBe(true);
+    });
+
+    it('フォームのパスワードピークボタンで入力タイプがtextに切り替わる', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      expect(wrapper.find('.modal input[type="password"]').exists()).toBe(true);
+
+      // モーダル内のピークボタン
+      await wrapper.find('.modal .btn-icon').trigger('click');
+      await flushPromises();
+
+      expect(wrapper.vm.isFormPasswordVisible()).toBe(true);
+      expect(wrapper.find('.modal input[type="password"]').exists()).toBe(false);
+    });
+  });
+
+  describe('セッション切れ検知', () => {
+    const mockPasswords: PasswordEntry[] = [
+      {
+        id: '1',
+        title: 'テストサイト',
+        username: 'user1',
+        password: 'pass1',
+        urls: ['https://example.com'],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+    ];
+
+    it('ポーリングでセッション切れを検知し即ロックする', async () => {
+      vi.useFakeTimers();
+      try {
+        let authed = true;
+        mockChromeRuntimeSendMessage.mockImplementation((message) => {
+          if (message.type === 'GET_SESSION_STATUS') {
+            return Promise.resolve({ success: true, data: { authenticated: authed, expiresAt: Date.now() + 30000 } });
+          }
+          if (message.type === 'GET_SETTINGS') {
+            return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+          }
+          if (message.type === 'GET_PASSWORDS') {
+            return Promise.resolve({ success: true, data: authed ? mockPasswords : [] });
+          }
+          return Promise.resolve({ success: true });
+        });
+        mockChromeStorageSessionGet.mockResolvedValue({});
+        mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+        const wrapper = mount(App);
+        await flushPromises();
+        expect(wrapper.vm.isAuthenticated).toBe(true);
+
+        // セッション切れへ切り替え
+        authed = false;
+
+        // ポーリング間隔(10秒)を進める
+        vi.advanceTimersByTime(10_000);
+        await flushPromises();
+
+        expect(wrapper.vm.isAuthenticated).toBe(false);
+        expect(wrapper.vm.passwords).toHaveLength(0);
+        expect(wrapper.text()).toContain('セッションが期限切れです');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('保存時にSession expiredが返ると即ロックする', async () => {
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: true, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: [] });
+        }
+        if (message.type === 'SAVE_PASSWORD') {
+          return Promise.resolve({ success: false, error: 'Session expired. Please authenticate.' });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      const textInputs = wrapper.findAll('input[type="text"]');
+      await textInputs[0].setValue('タイトル');
+      await textInputs[1].setValue('user');
+      await wrapper.find('input[type="password"]').setValue('pass');
+
+      const saveButton = wrapper.findAll('.btn-primary').find(b => b.text() === '保存');
+      await saveButton?.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.vm.isAuthenticated).toBe(false);
+      expect(wrapper.text()).toContain('セッションが期限切れです');
+    });
+
+    it('タブ再表示時(visibilitychange)にセッション切れを検知する', async () => {
+      let authed = true;
+      mockChromeRuntimeSendMessage.mockImplementation((message) => {
+        if (message.type === 'GET_SESSION_STATUS') {
+          return Promise.resolve({ success: true, data: { authenticated: authed, expiresAt: Date.now() + 30000 } });
+        }
+        if (message.type === 'GET_SETTINGS') {
+          return Promise.resolve({ success: true, data: { sessionTimeout: 30, screenshotCopyToClipboard: true, screenshotDownloadImage: true } });
+        }
+        if (message.type === 'GET_PASSWORDS') {
+          return Promise.resolve({ success: true, data: mockPasswords });
+        }
+        return Promise.resolve({ success: true });
+      });
+      mockChromeStorageSessionGet.mockResolvedValue({});
+      mockChromeStorageSessionRemove.mockResolvedValue(undefined);
+
+      const wrapper = mount(App);
+      await flushPromises();
+      expect(wrapper.vm.isAuthenticated).toBe(true);
+
+      // セッション切れ + タブが隠れていた状態から再表示
+      authed = false;
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      window.dispatchEvent(new Event('visibilitychange'));
+      await flushPromises();
+
+      expect(wrapper.vm.isAuthenticated).toBe(false);
+    });
+  });
+
+  describe('パスワード生成', () => {
+    it('空欄時: 生成するとパスワード欄に挿入される', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      expect(wrapper.vm.formData.password).toBe('');
+      const genBtn = wrapper.findAll('.btn').find(b => b.text() === '生成');
+      await genBtn?.trigger('click');
+      await flushPromises();
+
+      expect((wrapper.vm.formData.password as string).length).toBe(16);
+      expect((wrapper.vm.genResult as string).length).toBe(16);
+    });
+
+    it('入力済み時: 上書きせずクリップボードへコピーする', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      await wrapper.find('input[type="password"]').setValue('existing-pass');
+      expect(wrapper.vm.formData.password).toBe('existing-pass');
+
+      const genBtn = wrapper.findAll('.btn').find(b => b.text() === '生成');
+      await genBtn?.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.vm.formData.password).toBe('existing-pass');
+      expect(writeText).toHaveBeenCalled();
+      expect((wrapper.vm.genResult as string).length).toBe(16);
+    });
+
+    it('文字数を変更すると生成される長さが変わる', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      await wrapper.find('.generator-len input[type="number"]').setValue(24);
+      const genBtn = wrapper.findAll('.btn').find(b => b.text() === '生成');
+      await genBtn?.trigger('click');
+      await flushPromises();
+
+      expect((wrapper.vm.formData.password as string).length).toBe(24);
+    });
+  });
+
+  describe('secret表記', () => {
+    it('追加フィールドのチェックボックスラベルが secret である', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: [] });
+      const wrapper = mount(App);
+      await flushPromises();
+
+      await wrapper.find('.btn-primary').trigger('click');
+      await flushPromises();
+
+      const addFieldButton = wrapper.findAll('.btn').find(b => b.text().includes('フィールドを追加'));
+      await addFieldButton?.trigger('click');
+      await flushPromises();
+
+      expect(wrapper.find('.field-sensitive-label').text()).toContain('secret');
+      expect(wrapper.find('.field-sensitive-label').text()).not.toContain('機密');
     });
   });
 });

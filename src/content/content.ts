@@ -3,6 +3,15 @@ import type { PasswordEntry, FavoriteFieldMapping } from '@/types/storage';
 import { getFocusedInput, generateSelector, detectFieldType } from '@/utils/field-detector';
 import { captureFormData, detectForms } from './form-detector';
 import { normalizeUrl, matchUrl } from '@/utils/url-matcher';
+import { calculateUrlMatchScore, rankEntriesForDialog, isRecentlyUsed, URL_MATCH_HIGHLIGHT_THRESHOLD } from '@/utils/url-sorter';
+
+// 機密値のマスク文字列と、ピーク表示の自動非表示時間（5分）
+const SS_MASK_TEXT = '••••••••';
+const SS_REVEAL_AUTO_HIDE_MS = 5 * 60 * 1000;
+
+// ピークボタンの目アイコン（SVG。絵文字不使用のためインラインSVG）
+const SS_EYE_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const SS_EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-8-10-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
 // 右クリックされた入力フィールド
 let lastFocusedInput: HTMLInputElement | null = null;
@@ -255,13 +264,47 @@ function getDialogStyles(): string {
     .ss-bg-password-item:hover {
       background: var(--color-bg-tertiary);
     }
+    /* URL一致（このサイト）強調 */
+    .ss-bg-password-item--url-match {
+      background: var(--color-success-bg);
+      box-shadow: inset 3px 0 0 var(--color-btn-primary);
+    }
+    /* 最近使用の控えめマーカー */
+    .ss-bg-password-item--recent {
+      box-shadow: inset 3px 0 0 var(--color-border-medium);
+    }
     .ss-bg-item-title {
-      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
       margin-bottom: 2px;
+    }
+    .ss-bg-item-title-text {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
       color: var(--color-text-primary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .ss-bg-item-badge {
+      flex-shrink: 0;
+      padding: 1px 6px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+    .ss-bg-item-badge--url {
+      background: var(--color-btn-primary);
+      color: #ffffff;
+    }
+    .ss-bg-item-badge--recent {
+      background: var(--color-bg-tertiary);
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border-medium);
     }
     .ss-bg-item-username {
       font-size: 12px;
@@ -357,6 +400,40 @@ function getDialogStyles(): string {
     }
     .ss-bg-remove-btn:hover {
       background: var(--color-btn-danger-hover);
+    }
+    .ss-bg-value-wrap {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex: 2;
+      min-width: 0;
+    }
+    .ss-bg-value-wrap .ss-bg-value-input {
+      flex: 1;
+      min-width: 0;
+    }
+    .ss-bg-peek-btn {
+      padding: 4px 6px;
+      border: 1px solid var(--color-border-medium);
+      background: var(--color-bg-tertiary);
+      color: var(--color-text-primary);
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .ss-bg-peek-btn:hover {
+      background: var(--color-border-medium);
+    }
+    .ss-bg-sensitive-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 11px;
+      color: var(--color-text-secondary);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
     }
     .ss-bg-save-btn {
       width: 100%;
@@ -638,16 +715,40 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
     empty.className = 'ss-bg-empty-message';
     dialogContent.appendChild(empty);
   } else {
-    candidates.forEach(entry => {
+    // URL一致スコア → 最近使用 → タイトル でランキング
+    const currentUrl = window.location.href;
+    const ranked = rankEntriesForDialog(currentUrl, candidates);
+    const now = Date.now();
+    ranked.forEach(entry => {
       const row = document.createElement('div');
       row.className = 'ss-bg-password-item-row';
 
       const item = document.createElement('button');
       item.className = 'ss-bg-password-item';
 
+      // 強調: URL一致（このサイト）/ 最近使用
+      const isUrlMatch = calculateUrlMatchScore(currentUrl, entry) >= URL_MATCH_HIGHLIGHT_THRESHOLD;
+      const recent = isRecentlyUsed(entry, now);
+      if (isUrlMatch) item.classList.add('ss-bg-password-item--url-match');
+      else if (recent) item.classList.add('ss-bg-password-item--recent');
+
       const itemTitle = document.createElement('div');
-      itemTitle.textContent = entry.title;
       itemTitle.className = 'ss-bg-item-title';
+      const titleText = document.createElement('span');
+      titleText.className = 'ss-bg-item-title-text';
+      titleText.textContent = entry.title;
+      itemTitle.appendChild(titleText);
+      if (isUrlMatch) {
+        const badge = document.createElement('span');
+        badge.className = 'ss-bg-item-badge ss-bg-item-badge--url';
+        badge.textContent = 'このサイト';
+        itemTitle.appendChild(badge);
+      } else if (recent) {
+        const badge = document.createElement('span');
+        badge.className = 'ss-bg-item-badge ss-bg-item-badge--recent';
+        badge.textContent = '最近';
+        itemTitle.appendChild(badge);
+      }
 
       const itemUsername = document.createElement('div');
       itemUsername.textContent = entry.username;
@@ -839,6 +940,9 @@ function executeFavoriteMapping(entry: PasswordEntry, mappings: FavoriteFieldMap
       element.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
+
+  // 最近使用として記録
+  markEntryUsed(entry);
 }
 
 /**
@@ -866,96 +970,21 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
   fieldsContainer.style.overflowY = 'auto';
   
   const additionalFields = entry.additionalFields || [];
-  const fieldInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement }> = [];
-  
-  additionalFields.forEach((field, index) => {
-    const fieldRow = document.createElement('div');
-    fieldRow.className = 'ss-bg-field-row';
-    fieldRow.style.padding = '8px';
-    fieldRow.style.marginBottom = '8px';
-    fieldRow.style.background = '#f9f9f9';
-    fieldRow.style.borderRadius = '4px';
-    
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.value = field.name;
-    nameInput.placeholder = 'フィールド名';
-    nameInput.className = 'ss-bg-name-input';
-    
-    const valueInput = document.createElement('input');
-    valueInput.type = 'text';
-    valueInput.value = field.value;
-    valueInput.placeholder = '値';
-    valueInput.className = 'ss-bg-value-input';
-    
-    const selectorInput = document.createElement('input');
-    selectorInput.type = 'text';
-    selectorInput.value = field.selector || '';
-    selectorInput.placeholder = 'セレクタ（省略可）';
-    selectorInput.className = 'ss-bg-selector-input';
-    
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = '削除';
-    removeBtn.className = 'ss-bg-remove-btn';
-    removeBtn.style.alignSelf = 'flex-start';
-    removeBtn.addEventListener('click', () => {
-      fieldRow.remove();
-      const idx = fieldInputs.findIndex(f => f.nameInput === nameInput);
-      if (idx !== -1) fieldInputs.splice(idx, 1);
-    });
-    
-    fieldRow.appendChild(nameInput);
-    fieldRow.appendChild(valueInput);
-    fieldRow.appendChild(selectorInput);
-    fieldRow.appendChild(removeBtn);
-    fieldsContainer.appendChild(fieldRow);
-    
-    fieldInputs.push({ nameInput, valueInput, selectorInput });
+  const fieldInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement; sensitiveInput: HTMLInputElement }> = [];
+
+  additionalFields.forEach((field) => {
+    const { row, inputs } = createAdditionalFieldRow(field.name, field.value, field.selector || '', field.sensitive === true, fieldInputs, fieldsContainer);
+    fieldsContainer.appendChild(row);
+    fieldInputs.push(inputs);
   });
-  
+
   dialogContent.appendChild(fieldsContainer);
-  
+
   // フィールド追加ボタン
   const addBtn = createFieldButton('+ フィールドを追加', () => {
-    const fieldRow = document.createElement('div');
-    fieldRow.className = 'ss-bg-field-row';
-    fieldRow.style.padding = '8px';
-    fieldRow.style.marginBottom = '8px';
-    fieldRow.style.background = '#f9f9f9';
-    fieldRow.style.borderRadius = '4px';
-    
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.placeholder = 'フィールド名';
-    nameInput.className = 'ss-bg-name-input';
-    
-    const valueInput = document.createElement('input');
-    valueInput.type = 'text';
-    valueInput.placeholder = '値';
-    valueInput.className = 'ss-bg-value-input';
-    
-    const selectorInput = document.createElement('input');
-    selectorInput.type = 'text';
-    selectorInput.placeholder = 'セレクタ（省略可）';
-    selectorInput.className = 'ss-bg-selector-input';
-    
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = '削除';
-    removeBtn.className = 'ss-bg-remove-btn';
-    removeBtn.style.alignSelf = 'flex-start';
-    removeBtn.addEventListener('click', () => {
-      fieldRow.remove();
-      const idx = fieldInputs.findIndex(f => f.nameInput === nameInput);
-      if (idx !== -1) fieldInputs.splice(idx, 1);
-    });
-    
-    fieldRow.appendChild(nameInput);
-    fieldRow.appendChild(valueInput);
-    fieldRow.appendChild(selectorInput);
-    fieldRow.appendChild(removeBtn);
-    fieldsContainer.appendChild(fieldRow);
-    
-    fieldInputs.push({ nameInput, valueInput, selectorInput });
+    const { row, inputs } = createAdditionalFieldRow('', '', '', false, fieldInputs, fieldsContainer);
+    fieldsContainer.appendChild(row);
+    fieldInputs.push(inputs);
   });
   addBtn.style.background = '#e3f2fd';
   addBtn.style.color = '#1976d2';
@@ -970,7 +999,8 @@ function showFieldEditorDialog(entry: PasswordEntry, tabId: number): void {
       .map(inputs => ({
         name: inputs.nameInput.value.trim(),
         value: inputs.valueInput.value.trim(),
-        selector: inputs.selectorInput.value.trim()
+        selector: inputs.selectorInput.value.trim(),
+        sensitive: inputs.sensitiveInput.checked
       }))
       .filter(f => f.name && f.value);
     
@@ -1156,7 +1186,7 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   // 追加フィールド
   if (entry.additionalFields) {
     entry.additionalFields.forEach((field, index) => {
-      const fieldBtn = createFieldButton(`${field.name}: ${field.value}`, () => {
+      const fieldBtn = createFieldButton(`${field.name}: ${field.sensitive ? SS_MASK_TEXT : field.value}`, () => {
         handleFillField({ value: field.value }, entry, `additional:${index}`);
       });
       fieldBtn.addEventListener('mouseenter', () => {
@@ -1710,6 +1740,17 @@ function setupMessageListener(): void {
 /**
  * パスワードエントリ全体を自動入力
  */
+/**
+ * エントリを使用した日時を記録（最近使用のランキング/強調用）。
+ * lastUsedAt のみ更新し updatedAt は更新しない。fire-and-forget。
+ */
+export function markEntryUsed(entry: PasswordEntry): void {
+  void chrome.runtime.sendMessage({
+    type: 'UPDATE_PASSWORD',
+    payload: { id: entry.id, entry: { ...entry, lastUsedAt: Date.now() } }
+  });
+}
+
 async function handleFillPassword(entry: PasswordEntry): Promise<void> {
   const form = lastFocusedInput?.closest('form');
   if (!form) {
@@ -1770,6 +1811,9 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
 
   // 現在のURLが登録されていない場合、URLを追加するか提案
   await suggestAddingCurrentUrl(entry);
+
+  // 最近使用として記録
+  markEntryUsed(entry);
 }
 
 /**
@@ -1841,6 +1885,11 @@ async function handleFillField(
       await saveFavoriteAction(favoriteRegisterSlot, entry, [{ selector, source }]);
       favoriteRegisterSlot = null;
     }
+  }
+
+  // 最近使用として記録（entry がある場合）
+  if (entry) {
+    markEntryUsed(entry);
   }
 }
 
@@ -2062,7 +2111,7 @@ function showEntryEditDialog(entry: PasswordEntry, tabId: number): void {
   dialogContent.appendChild(notesGroup.group);
 
   // 追加フィールド
-  const additionalInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement }> = [];
+  const additionalInputs: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement; sensitiveInput: HTMLInputElement }> = [];
   const fieldsContainer = document.createElement('div');
   fieldsContainer.className = 'ss-bg-fields-container';
 
@@ -2074,7 +2123,7 @@ function showEntryEditDialog(entry: PasswordEntry, tabId: number): void {
     dialogContent.appendChild(addLabel);
 
     for (const field of entry.additionalFields) {
-      const { row, inputs } = createAdditionalFieldRow(field.name, field.value, field.selector || '', additionalInputs, fieldsContainer);
+      const { row, inputs } = createAdditionalFieldRow(field.name, field.value, field.selector || '', field.sensitive === true, additionalInputs, fieldsContainer);
       fieldsContainer.appendChild(row);
       additionalInputs.push(inputs);
     }
@@ -2083,7 +2132,7 @@ function showEntryEditDialog(entry: PasswordEntry, tabId: number): void {
 
   // フィールド追加ボタン
   const addFieldBtn = createFieldButton('+ フィールドを追加', () => {
-    const { row, inputs } = createAdditionalFieldRow('', '', '', additionalInputs, fieldsContainer);
+    const { row, inputs } = createAdditionalFieldRow('', '', '', false, additionalInputs, fieldsContainer);
     fieldsContainer.appendChild(row);
     additionalInputs.push(inputs);
   });
@@ -2101,7 +2150,8 @@ function showEntryEditDialog(entry: PasswordEntry, tabId: number): void {
       .map(inputs => ({
         name: inputs.nameInput.value.trim(),
         value: inputs.valueInput.value.trim(),
-        selector: inputs.selectorInput.value.trim()
+        selector: inputs.selectorInput.value.trim(),
+        sensitive: inputs.sensitiveInput.checked
       }))
       .filter(f => f.name && f.value);
 
@@ -2166,15 +2216,23 @@ function showEntryEditDialog(entry: PasswordEntry, tabId: number): void {
 /**
  * 追加フィールド行を作成
  */
+type AdditionalFieldInputs = {
+  nameInput: HTMLInputElement;
+  valueInput: HTMLInputElement;
+  selectorInput: HTMLInputElement;
+  sensitiveInput: HTMLInputElement;
+};
+
 function createAdditionalFieldRow(
   name: string,
   value: string,
   selector: string,
-  inputsArray: Array<{ nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement }>,
-  container: HTMLElement
+  sensitive: boolean,
+  inputsArray: AdditionalFieldInputs[],
+  _container: HTMLElement
 ): {
   row: HTMLDivElement;
-  inputs: { nameInput: HTMLInputElement; valueInput: HTMLInputElement; selectorInput: HTMLInputElement };
+  inputs: AdditionalFieldInputs;
 } {
   const row = document.createElement('div');
   row.className = 'ss-bg-field-row';
@@ -2195,6 +2253,77 @@ function createAdditionalFieldRow(
   valueInput.placeholder = '値';
   valueInput.className = 'ss-bg-value-input';
 
+  // 機密チェック
+  const sensitiveInput = document.createElement('input');
+  sensitiveInput.type = 'checkbox';
+  sensitiveInput.checked = sensitive;
+  const sensitiveLabel = document.createElement('label');
+  sensitiveLabel.className = 'ss-bg-sensitive-label';
+  sensitiveLabel.appendChild(sensitiveInput);
+  sensitiveLabel.appendChild(document.createTextNode('secret'));
+
+  // ピークボタン（機密時のみ表示）
+  const peekBtn = document.createElement('button');
+  peekBtn.type = 'button';
+  peekBtn.className = 'ss-bg-peek-btn';
+
+  // 値入力 + ピーク を1つの行にまとめる
+  const valueWrap = document.createElement('div');
+  valueWrap.className = 'ss-bg-value-wrap';
+  valueWrap.appendChild(valueInput);
+  valueWrap.appendChild(peekBtn);
+
+  let revealed = false;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function setPeekIcon(isRevealed: boolean): void {
+    peekBtn.innerHTML = isRevealed ? SS_EYE_OFF_SVG : SS_EYE_SVG;
+    peekBtn.setAttribute('aria-label', isRevealed ? '隠す' : '表示');
+    peekBtn.title = isRevealed ? '隠す' : '表示';
+  }
+
+  function applyValueType(): void {
+    const isSensitive = sensitiveInput.checked;
+    peekBtn.style.display = isSensitive ? '' : 'none';
+    valueInput.type = isSensitive && !revealed ? 'password' : 'text';
+  }
+
+  function hideReveal(): void {
+    revealed = false;
+    setPeekIcon(false);
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    applyValueType();
+  }
+
+  peekBtn.addEventListener('click', () => {
+    if (revealed) {
+      hideReveal();
+      return;
+    }
+    revealed = true;
+    setPeekIcon(true);
+    applyValueType();
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (revealed) hideReveal();
+    }, SS_REVEAL_AUTO_HIDE_MS);
+  });
+
+  setPeekIcon(false);
+
+  sensitiveInput.addEventListener('change', () => {
+    if (!sensitiveInput.checked) {
+      hideReveal();
+    } else {
+      applyValueType();
+    }
+  });
+
+  applyValueType();
+
   const selectorInput = document.createElement('input');
   selectorInput.type = 'text';
   selectorInput.value = selector;
@@ -2205,17 +2334,19 @@ function createAdditionalFieldRow(
   removeBtn.textContent = '削除';
   removeBtn.className = 'ss-bg-remove-btn';
   removeBtn.addEventListener('click', () => {
+    if (hideTimer) clearTimeout(hideTimer);
     row.remove();
     const idx = inputsArray.findIndex(f => f.nameInput === nameInput);
     if (idx !== -1) inputsArray.splice(idx, 1);
   });
 
   row.appendChild(nameInput);
-  row.appendChild(valueInput);
+  row.appendChild(valueWrap);
+  row.appendChild(sensitiveLabel);
   row.appendChild(selectorInput);
   row.appendChild(removeBtn);
 
-  const inputs = { nameInput, valueInput, selectorInput };
+  const inputs: AdditionalFieldInputs = { nameInput, valueInput, selectorInput, sensitiveInput };
   return { row, inputs };
 }
 
@@ -2298,4 +2429,16 @@ export function getLastFocusedInput(): HTMLInputElement | null {
  */
 export function getDialogStylesForTest(): string {
   return getDialogStyles();
+}
+
+/**
+ * 追加フィールド行を作成（テスト用エクスポート）
+ */
+export function createAdditionalFieldRowForTest(
+  name: string,
+  value: string,
+  selector: string,
+  sensitive: boolean
+): { row: HTMLDivElement; inputs: AdditionalFieldInputs } {
+  return createAdditionalFieldRow(name, value, selector, sensitive, [], document.createElement('div'));
 }

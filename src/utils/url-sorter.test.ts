@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateUrlMatchScore, sortEntriesByUrl } from './url-sorter';
+import { calculateUrlMatchScore, sortEntriesByUrl, rankEntriesForDialog, isRecentlyUsed, URL_MATCH_HIGHLIGHT_THRESHOLD } from './url-sorter';
 import type { PasswordEntry } from '@/types/storage';
 
 describe('calculateUrlMatchScore', () => {
@@ -250,9 +250,88 @@ describe('sortEntriesByUrl', () => {
   it('空配列の場合、空配列を返す', () => {
     const currentUrl = 'https://example.com/login';
     const entries: PasswordEntry[] = [];
-    
+
     const sorted = sortEntriesByUrl(currentUrl, entries);
-    
+
     expect(sorted).toEqual([]);
+  });
+});
+
+describe('rankEntriesForDialog', () => {
+  const baseEntry = (overrides: Partial<PasswordEntry>): PasswordEntry => ({
+    id: overrides.id ?? 'x',
+    title: overrides.title ?? 'T',
+    urls: overrides.urls ?? ['https://example.com/'],
+    username: 'u',
+    password: 'p',
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides
+  });
+
+  it('URL一致エントリが先頭、不一致は末尾', () => {
+    const entries = [
+      baseEntry({ id: 'other', title: 'Other', urls: ['https://other.com/'] }),
+      baseEntry({ id: 'match', title: 'Match', urls: ['https://example.com/login'] })
+    ];
+    const ranked = rankEntriesForDialog('https://example.com/login', entries);
+    expect(ranked[0].id).toBe('match');
+    expect(ranked[1].id).toBe('other');
+  });
+
+  it('同スコア内は lastUsedAt が新しい順', () => {
+    const entries = [
+      baseEntry({ id: 'old', title: 'Old', lastUsedAt: 1000 }),
+      baseEntry({ id: 'new', title: 'New', lastUsedAt: 9000 }),
+      baseEntry({ id: 'never', title: 'Never' })
+    ];
+    const ranked = rankEntriesForDialog('https://example.com/login', entries);
+    // 全員ドメイン一致(800) → lastUsedAt順
+    expect(ranked[0].id).toBe('new');
+    expect(ranked[1].id).toBe('old');
+    expect(ranked[2].id).toBe('never');
+  });
+
+  it('URLスコアがlastUsedAtより優先（不一致の最近使用より一致を上）', () => {
+    const entries = [
+      baseEntry({ id: 'recent-nomatch', title: 'RecentNoMatch', urls: ['https://other.com/'], lastUsedAt: 999999 }),
+      baseEntry({ id: 'match-old', title: 'MatchOld', urls: ['https://example.com/'] })
+    ];
+    const ranked = rankEntriesForDialog('https://example.com/login', entries);
+    expect(ranked[0].id).toBe('match-old');
+    expect(ranked[1].id).toBe('recent-nomatch');
+  });
+
+  it('スコア・lastUsedAt同点ならタイトル昇順', () => {
+    const entries = [
+      baseEntry({ id: 'z', title: 'Zeta' }),
+      baseEntry({ id: 'a', title: 'Alpha' })
+    ];
+    const ranked = rankEntriesForDialog('https://example.com/login', entries);
+    expect(ranked[0].id).toBe('a');
+    expect(ranked[1].id).toBe('z');
+  });
+});
+
+describe('isRecentlyUsed', () => {
+  it('lastUsedAtがwindow内ならtrue', () => {
+    const e: PasswordEntry = { id: '1', title: 'T', urls: [], username: 'u', password: 'p', createdAt: 1, updatedAt: 1, lastUsedAt: 5000 };
+    expect(isRecentlyUsed(e, 6000, 5000)).toBe(true);
+  });
+
+  it('lastUsedAtがwindow外ならfalse', () => {
+    const e: PasswordEntry = { id: '1', title: 'T', urls: [], username: 'u', password: 'p', createdAt: 1, updatedAt: 1, lastUsedAt: 1000 };
+    expect(isRecentlyUsed(e, 9999, 5000)).toBe(false);
+  });
+
+  it('lastUsedAt未設定はfalse', () => {
+    const e: PasswordEntry = { id: '1', title: 'T', urls: [], username: 'u', password: 'p', createdAt: 1, updatedAt: 1 };
+    expect(isRecentlyUsed(e, 9999, 5000)).toBe(false);
+  });
+});
+
+describe('URL_MATCH_HIGHLIGHT_THRESHOLD', () => {
+  it('ドメイン一致以上のスコアが閾値に達する', () => {
+    expect(URL_MATCH_HIGHLIGHT_THRESHOLD).toBe(800);
   });
 });

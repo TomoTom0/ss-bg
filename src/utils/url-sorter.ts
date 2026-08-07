@@ -79,7 +79,7 @@ export function sortEntriesByUrl(currentUrl: string, entries: PasswordEntry[]): 
     entry,
     score: calculateUrlMatchScore(currentUrl, entry)
   }));
-  
+
   // スコアの高い順にソート、同点の場合はタイトルのアルファベット順
   scored.sort((a, b) => {
     if (b.score !== a.score) {
@@ -87,6 +87,49 @@ export function sortEntriesByUrl(currentUrl: string, entries: PasswordEntry[]): 
     }
     return a.entry.title.localeCompare(b.entry.title);
   });
-  
+
   return scored.map(s => s.entry);
+}
+
+/**
+ * 自動入力ダイアログ向けのランキング閾値（ドメイン一致以上を「このサイト」とする）
+ */
+export const URL_MATCH_HIGHLIGHT_THRESHOLD = 800;
+
+/**
+ * 最終使用を「最近」とする window（ミリ秒、24時間）
+ */
+export const RECENT_USE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * エントリが最近使用されたか（現在時刻を外部から渡すことでテスト可能）
+ */
+export function isRecentlyUsed(entry: PasswordEntry, now: number, windowMs = RECENT_USE_WINDOW_MS): boolean {
+  return typeof entry.lastUsedAt === 'number' && now - entry.lastUsedAt <= windowMs;
+}
+
+/**
+ * 自動入力ダイアログ用のランキング。
+ * 並び順: URL一致スコア(降順) → lastUsedAt(降順) → タイトル(昇順)。
+ * スコア0（不一致）のエントリも末尾に含む。
+ */
+export function rankEntriesForDialog(currentUrl: string, entries: PasswordEntry[]): PasswordEntry[] {
+  const ranked = entries.map(entry => ({
+    entry,
+    score: calculateUrlMatchScore(currentUrl, entry)
+  }));
+
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    const aUsed = a.entry.lastUsedAt ?? 0;
+    const bUsed = b.entry.lastUsedAt ?? 0;
+    if (bUsed !== aUsed) {
+      return bUsed - aUsed;
+    }
+    return a.entry.title.localeCompare(b.entry.title);
+  });
+
+  return ranked.map(r => r.entry);
 }
