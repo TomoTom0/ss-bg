@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initialize, getLastFocusedInput, getDialogStylesForTest, createAdditionalFieldRowForTest, markEntryUsed } from './content';
+import { initialize, getLastFocusedInput, getDialogStylesForTest, createAdditionalFieldRowForTest, markEntryUsed, suggestAddingCurrentUrl, getConfirmDialogButtonsForTest } from './content';
+import { normalizeUrl } from '@/utils/url-matcher';
+import type { PasswordEntry } from '@/types/storage';
 
 // chrome APIのモック
 const mockSendMessage = vi.fn();
@@ -379,6 +381,66 @@ describe('content script', () => {
       expect(typeof msg.payload.entry.lastUsedAt).toBe('number');
       // updatedAt は維持
       expect(msg.payload.entry.updatedAt).toBe(2);
+    });
+  });
+
+  describe('suggestAddingCurrentUrl', () => {
+    const baseEntry: PasswordEntry = {
+      id: 'abc',
+      title: 'T',
+      username: 'u',
+      password: 'p',
+      urls: ['other.example.com'],
+      createdAt: 1,
+      updatedAt: 2
+    };
+
+    it('承認すると現在URLを含む更新エントリを返す（markEntryUsedに渡して追加URLを保持できる）', async () => {
+      mockSendMessage.mockClear();
+      mockSendMessage.mockResolvedValue({ success: true });
+
+      const promise = suggestAddingCurrentUrl(baseEntry);
+      await vi.waitFor(() => {
+        expect(getConfirmDialogButtonsForTest().ok).not.toBeNull();
+      });
+      getConfirmDialogButtonsForTest().ok?.click();
+
+      const updated = await promise;
+      const expectedUrl = normalizeUrl(window.location.href);
+      expect(updated).not.toBeNull();
+      expect(updated?.urls).toContain(expectedUrl);
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const msg = mockSendMessage.mock.calls[0][0];
+      expect(msg.type).toBe('UPDATE_PASSWORD');
+      expect(msg.payload.entry.urls).toContain(expectedUrl);
+    });
+
+    it('キャンセルすると null を返し保存しない', async () => {
+      mockSendMessage.mockClear();
+
+      const promise = suggestAddingCurrentUrl(baseEntry);
+      await vi.waitFor(() => {
+        expect(getConfirmDialogButtonsForTest().cancel).not.toBeNull();
+      });
+      getConfirmDialogButtonsForTest().cancel?.click();
+
+      const updated = await promise;
+      expect(updated).toBeNull();
+      expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('現在URLが既に登録済みの場合はプロンプトを出さず null を返す', async () => {
+      mockSendMessage.mockClear();
+      const registered: PasswordEntry = {
+        ...baseEntry,
+        urls: [normalizeUrl(window.location.href)]
+      };
+
+      const updated = await suggestAddingCurrentUrl(registered);
+
+      expect(updated).toBeNull();
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(getConfirmDialogButtonsForTest().ok).toBeNull();
     });
   });
 });

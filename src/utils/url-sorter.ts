@@ -10,18 +10,47 @@ export interface UrlMatchScore {
 }
 
 /**
+ * URL文字列をパースする。
+ * オプションページから保存されたURLは normalizeUrl() によりプロトコルなし
+ * （例: example.com/login）のため、http/https URLと解釈できない場合は
+ * https:// を補って再試行する。
+ * ※ new URL('example.com:8080/x') は protocol='example.com:' としてパース成功するため、
+ * プロトコルの検証も行う。
+ */
+function parseUrlOrNull(url: string): URL | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed;
+    }
+  } catch {
+    // https:// 補完で再試行
+  }
+  try {
+    const fallback = new URL(`https://${url}`);
+    if (fallback.protocol === 'https:') {
+      return fallback;
+    }
+  } catch {
+    // どちらも失敗
+  }
+  return null;
+}
+
+/**
  * URLマッチングスコアを計算
  */
 export function calculateUrlMatchScore(currentUrl: string, entry: PasswordEntry): number {
   try {
     const current = new URL(currentUrl);
     let maxScore = 0;
-    
+
     for (const entryUrl of entry.urls) {
       try {
-        const target = new URL(entryUrl);
+        const target = parseUrlOrNull(entryUrl);
+        if (!target) continue;
         let score = 0;
-        
+
         // 完全一致
         if (current.href === target.href) {
           score = 1000;

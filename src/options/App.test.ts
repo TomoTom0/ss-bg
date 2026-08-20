@@ -98,6 +98,8 @@ describe('Options App', () => {
 
   afterEach(() => {
     vi.clearAllTimers();
+    // テスト内で設定した戻り値が後続テストに漏れないように実装をリセット
+    vi.mocked(webauthnAuthenticate).mockReset();
   });
 
   describe('初期表示', () => {
@@ -146,6 +148,34 @@ describe('Options App', () => {
       await flushPromises();
 
       expect(authMock).toHaveBeenCalled();
+    });
+
+    it('CREATE_SESSION応答にdataが無くても期限推定で例外にならずパスワードを読み込む', async () => {
+      // 前テストのタブ選択がlocalStorageに残っているとmount時に自動認証が走るため初期化
+      localStorage.removeItem('ss-bg-options-active-tab');
+      setupDefaultMocks({ authenticated: false, passwords: [] });
+      const authMock = vi.mocked(webauthnAuthenticate);
+      // exportKey 可能な実CryptoKeyを用意（JWKエクスポートが成功する状態を作る）
+      const key = await crypto.subtle.generateKey(
+        { name: 'AES-GCM', length: 256 },
+        true,
+        ['encrypt', 'decrypt']
+      );
+      authMock.mockResolvedValue({ key, credentialId: new ArrayBuffer(0) });
+
+      const wrapper = mount(App);
+      await flushPromises();
+      mockChromeRuntimeSendMessage.mockClear();
+
+      await wrapper.find('#tab-auth').trigger('click');
+      await flushPromises();
+
+      // セッション期限のフォールバック推定（設定から計算）が例外にならず、
+      // 認証完了後の loadPasswords が実行される
+      expect(mockChromeRuntimeSendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'GET_PASSWORDS' })
+      );
+      expect(wrapper.find('#tab-auth').text()).toContain('認証済み');
     });
 
     it('認証済み時は Auth タブに認証済みバッジとロック操作が表示される', async () => {
@@ -786,6 +816,49 @@ describe('Options App', () => {
       // パスワードが表示される
       expect(wrapper.vm.isPasswordVisible('1')).toBe(true);
       expect(wrapper.vm.getPasswordDisplay('1')).toBe('secret123');
+    });
+
+    it('フォームを閉じるとフォームのパスワードピーク状態はリセットされる', async () => {
+      setupDefaultMocks({ authenticated: true, passwords: mockPasswords });
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // エディタを開いてパスワードをピーク表示
+      wrapper.vm.editEntry(mockPasswords[0]);
+      wrapper.vm.toggleFormPasswordVisibility();
+      expect(wrapper.vm.isFormPasswordVisible()).toBe(true);
+
+      // フォームを閉じる（キャンセル）
+      wrapper.vm.cancelEdit();
+      expect(wrapper.vm.isFormPasswordVisible()).toBe(false);
+
+      // 別エントリを開いても前のピーク状態は引き継がれない
+      wrapper.vm.editEntry(mockPasswords[0]);
+      expect(wrapper.vm.isFormPasswordVisible()).toBe(false);
+    });
+
+    it('フォームを閉じると追加フィールドのピーク状態もリセットされる', async () => {
+      const entryWithFields: PasswordEntry = {
+        ...mockPasswords[0],
+        id: '2',
+        additionalFields: [
+          { name: 'PIN', value: '1234', sensitive: true }
+        ]
+      };
+      setupDefaultMocks({ authenticated: true, passwords: [entryWithFields] });
+
+      const wrapper = mount(App);
+      await flushPromises();
+
+      // エディタを開いて追加フィールド0をピーク表示
+      wrapper.vm.editEntry(entryWithFields);
+      wrapper.vm.toggleFormFieldVisibility(0);
+      expect(wrapper.vm.isFormFieldVisible(0)).toBe(true);
+
+      // フォームを閉じるとリセットされる
+      wrapper.vm.cancelEdit();
+      expect(wrapper.vm.isFormFieldVisible(0)).toBe(false);
     });
   });
 

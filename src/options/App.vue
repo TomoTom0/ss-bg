@@ -104,7 +104,7 @@
           </div>
 
           <template v-else>
-            <button @click="showAddForm = true" class="btn btn-primary">
+            <button @click="openAddForm()" class="btn btn-primary">
               新規追加
             </button>
 
@@ -660,8 +660,18 @@ function getFieldDisplay(entryId: string, index: number, field: { value: string;
 
 // --- フォーム: パスワード/機密フィールドのピーク ---
 const FORM_PW_KEY = 'formpw';
+const FORM_FIELD_KEY_PREFIX = 'formaf:';
 function formFieldKey(index: number): string {
-  return `formaf:${index}`;
+  return `${FORM_FIELD_KEY_PREFIX}${index}`;
+}
+// フォーム固有のピーク状態をクリア（エディタ開閉時に呼ぶ。
+// グローバルキーを使い回すため、閉じたままのrevealが別エントリに漏れないようにする）
+function clearFormReveals(): void {
+  for (const key of [...revealed.value]) {
+    if (key === FORM_PW_KEY || key.startsWith(FORM_FIELD_KEY_PREFIX)) {
+      hideSecret(key);
+    }
+  }
 }
 function isFormPasswordVisible(): boolean {
   return isRevealed(FORM_PW_KEY);
@@ -774,7 +784,7 @@ async function authenticate(): Promise<void> {
       isAuthenticated.value = true;
       // 残り時間を記録（レスポンスに無ければタイムアウト設定から推定）
       const expiresFromResponse = response.data && isSessionStatus(response.data) ? response.data.expiresAt : undefined;
-      sessionExpiresAt.value = expiresFromResponse ?? (Date.now() + (settings.value.sessionTimeout || 30) * 60_000);
+      sessionExpiresAt.value = expiresFromResponse ?? (Date.now() + (settings.sessionTimeout || 30) * 60_000);
       authError.value = null;
       await loadPasswords();
     } else {
@@ -914,7 +924,13 @@ async function loadSettings(): Promise<void> {
   }
 }
 
+function openAddForm(): void {
+  clearFormReveals();
+  showAddForm.value = true;
+}
+
 function editEntry(entry: PasswordEntry): void {
+  clearFormReveals();
   editingEntry.value = entry;
   formData.value = {
     title: entry.title,
@@ -935,6 +951,7 @@ function editEntry(entry: PasswordEntry): void {
 function cancelEdit(): void {
   showAddForm.value = false;
   editingEntry.value = null;
+  clearFormReveals();
   formError.value = null;
   formData.value = {
     title: '',
@@ -1125,7 +1142,7 @@ onMounted(async () => {
     await chrome.storage.session.remove(['capturedFormData']);
     
     // フォームに反映
-    showAddForm.value = true;
+    openAddForm();
     const capturedFields = Array.isArray(capturedData.additionalFields)
       ? capturedData.additionalFields
       : [];

@@ -1810,10 +1810,10 @@ async function handleFillPassword(entry: PasswordEntry): Promise<void> {
   }
 
   // 現在のURLが登録されていない場合、URLを追加するか提案
-  await suggestAddingCurrentUrl(entry);
+  const updatedEntry = await suggestAddingCurrentUrl(entry);
 
-  // 最近使用として記録
-  markEntryUsed(entry);
+  // 最近使用として記録（URL追加があった場合は更新後のエントリを使い、追加URLを保持する）
+  markEntryUsed(updatedEntry ?? entry);
 }
 
 /**
@@ -2375,7 +2375,12 @@ function createFormGroup(
 /**
  * 現在のURLを登録するか提案
  */
-async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
+/**
+ * 現在のURLが未登録の場合、追加するか提案する。
+ * URLを追加した場合は更新後のエントリを返し、追加しなかった場合は null を返す。
+ * （返されたエントリを markEntryUsed に渡すことで、追加したURLが上書きされないようにする）
+ */
+export async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<PasswordEntry | null> {
   const currentUrl = window.location.href;
   const normalizedCurrentUrl = normalizeUrl(currentUrl);
 
@@ -2383,7 +2388,7 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
   const matchPriority = matchUrl(currentUrl, entry.urls);
   if (matchPriority > 0) {
     // すでに登録されている（完全一致またはドメイン一致）
-    return;
+    return null;
   }
 
   // URLが登録されていない場合、追加するか確認
@@ -2392,7 +2397,7 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
   );
 
   if (!shouldAdd) {
-    return;
+    return null;
   }
 
   // URLを追加
@@ -2410,11 +2415,12 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
     });
 
     if (response.success) {
-      // URL added successfully
+      return updatedEntry;
     }
   } catch (error) {
     console.error('[SS-BG] Error adding URL:', error);
   }
+  return null;
 }
 
 /**
@@ -2422,6 +2428,19 @@ async function suggestAddingCurrentUrl(entry: PasswordEntry): Promise<void> {
  */
 export function getLastFocusedInput(): HTMLInputElement | null {
   return lastFocusedInput;
+}
+
+/**
+ * 確認ダイアログのボタンを取得（テスト用）。
+ * closed Shadow DOM内のため document.querySelector では参照できない。
+ */
+export function getConfirmDialogButtonsForTest(): { ok: HTMLButtonElement | null; cancel: HTMLButtonElement | null } {
+  const okEl = dialogShadowRoot?.querySelector('.ss-bg-confirm-ok') ?? null;
+  const cancelEl = dialogShadowRoot?.querySelector('.ss-bg-confirm-cancel') ?? null;
+  return {
+    ok: okEl instanceof HTMLButtonElement ? okEl : null,
+    cancel: cancelEl instanceof HTMLButtonElement ? cancelEl : null
+  };
 }
 
 /**

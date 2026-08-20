@@ -145,10 +145,46 @@ describe('url-matcher utilities', () => {
     it('空のURLリストの場合は0を返す', () => {
       const currentUrl = 'https://example.com/page';
       const entryUrls: string[] = [];
-      
+
       const priority = matchUrl(currentUrl, entryUrls);
-      
+
       expect(priority).toBe(0);
+    });
+
+    it('プロトコルなし保存URL（normalizeUrl形式）と完全一致はpriority 2を返す', () => {
+      const currentUrl = 'https://example.com/login';
+      const entryUrls = ['example.com/login'];
+
+      const priority = matchUrl(currentUrl, entryUrls);
+
+      expect(priority).toBe(2);
+    });
+
+    it('プロトコルなし保存URL（normalizeUrl形式）とドメイン一致はpriority 1を返す', () => {
+      const currentUrl = 'https://example.com/dashboard';
+      const entryUrls = ['example.com/login'];
+
+      const priority = matchUrl(currentUrl, entryUrls);
+
+      expect(priority).toBe(1);
+    });
+
+    it('プロトコルなし保存URL（normalizeUrl形式）とサブドメイン違いはpriority 0を返す', () => {
+      const currentUrl = 'https://app.example.com/page';
+      const entryUrls = ['example.com/login'];
+
+      const priority = matchUrl(currentUrl, entryUrls);
+
+      expect(priority).toBe(0);
+    });
+
+    it('プロトコルなし保存URLでポート付きも正しくマッチする', () => {
+      const currentUrl = 'https://example.com:8080/page';
+      const entryUrls = ['example.com:8080/login'];
+
+      const priority = matchUrl(currentUrl, entryUrls);
+
+      expect(priority).toBe(1);
     });
   });
 

@@ -335,3 +335,45 @@ describe('URL_MATCH_HIGHLIGHT_THRESHOLD', () => {
     expect(URL_MATCH_HIGHLIGHT_THRESHOLD).toBe(800);
   });
 });
+
+describe('normalizeUrl保存形式（プロトコルなし）のスコアリング', () => {
+  const protocolLessEntry = (id: string, urls: string[]): PasswordEntry => ({
+    id,
+    title: `Entry ${id}`,
+    urls,
+    username: 'user',
+    password: 'pass',
+    createdAt: 1,
+    updatedAt: 1
+  });
+
+  it('プロトコルなし保存URLとの完全一致はスコア1000', () => {
+    const entry = protocolLessEntry('1', ['example.com/login']);
+    expect(calculateUrlMatchScore('https://example.com/login', entry)).toBe(1000);
+  });
+
+  it('プロトコルなし保存URLとのホスト名一致はスコア900', () => {
+    const entry = protocolLessEntry('1', ['www.example.com']);
+    expect(calculateUrlMatchScore('https://www.example.com/other', entry)).toBe(900);
+  });
+
+  it('プロトコルなし保存URLとのドメイン一致はスコア800', () => {
+    const entry = protocolLessEntry('1', ['example.com/login']);
+    expect(calculateUrlMatchScore('https://www.example.com/dashboard', entry)).toBe(800);
+  });
+
+  it('プロトコルなし保存URLはハイライト閾値を超える', () => {
+    const entry = protocolLessEntry('1', ['example.com']);
+    const score = calculateUrlMatchScore('https://example.com/anywhere', entry);
+    expect(score).toBeGreaterThanOrEqual(URL_MATCH_HIGHLIGHT_THRESHOLD);
+  });
+
+  it('rankEntriesForDialogでプロトコルなし保存URLのエントリが先頭にランクされる', () => {
+    const entries = [
+      protocolLessEntry('other', ['other.com/login']),
+      protocolLessEntry('match', ['example.com/login'])
+    ];
+    const ranked = rankEntriesForDialog('https://www.example.com/dashboard', entries);
+    expect(ranked[0].id).toBe('match');
+  });
+});
