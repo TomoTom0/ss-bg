@@ -2,6 +2,34 @@ import type { PasswordEntry } from '@/types/storage';
 import type { UrlMatchResult } from '@/types/url-matcher';
 
 /**
+ * URL文字列をパースする。
+ * オプションページから保存されたURLは normalizeUrl() によりプロトコルなし
+ * （例: example.com/login）のため、http/https URLと解釈できない場合は
+ * https:// を補って再試行する。
+ * ※ new URL('example.com:8080/x') は protocol='example.com:' としてパース成功するため、
+ * プロトコルの検証も行う。
+ */
+function parseUrlOrNull(url: string): URL | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed;
+    }
+  } catch {
+    // https:// 補完で再試行
+  }
+  try {
+    const fallback = new URL(`https://${url}`);
+    if (fallback.protocol === 'https:') {
+      return fallback;
+    }
+  } catch {
+    // どちらも失敗
+  }
+  return null;
+}
+
+/**
  * 現在のURLとエントリのURLリストをマッチング
  * @returns priority: 2=完全一致, 1=ドメイン一致, 0=マッチなし
  */
@@ -20,22 +48,19 @@ export function matchUrl(currentUrl: string, entryUrls: string[]): number {
   }
 
   // 完全一致チェック (priority 2)
-  if (entryUrls.includes(currentUrl)) {
+  // 保存形式は normalizeUrl() によるプロトコルなし形式のため、正規化してから比較する
+  const normalizedCurrent = normalizeUrl(currentUrl);
+  if (entryUrls.includes(currentUrl) || entryUrls.includes(normalizedCurrent)) {
     return 2;
   }
 
   // ドメイン一致チェック (priority 1)
   // ホスト名（ドメイン+ポート）が一致する必要がある
   for (const url of entryUrls) {
-    try {
-      const entryParsed = new URL(url);
-      if (currentParsed.hostname === entryParsed.hostname &&
-          currentParsed.port === entryParsed.port) {
-        return 1;
-      }
-    } catch {
-      // 無効なURLはスキップ
-      continue;
+    const entryParsed = parseUrlOrNull(url);
+    if (entryParsed && currentParsed.hostname === entryParsed.hostname &&
+        currentParsed.port === entryParsed.port) {
+      return 1;
     }
   }
 

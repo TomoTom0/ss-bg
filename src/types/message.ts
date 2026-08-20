@@ -50,6 +50,7 @@ export interface Response<T = unknown> {
  */
 export interface SessionStatus {
   authenticated: boolean;
+  expiresAt?: number;
 }
 
 /**

@@ -40,6 +40,8 @@
   --color-btn-danger-hover: #da190b;
   --color-btn-default: #e0e0e0;
   --color-btn-default-hover: #d0d0d0;
+  --color-btn-warning: #ff9800;
+  --color-btn-warning-hover: #e68900;
 
   /* 特殊セクション */
   --color-auth-bg: #e3f2fd;
@@ -90,6 +92,8 @@
   --color-btn-danger-hover: #ef5350;
   --color-btn-default: #424242;
   --color-btn-default-hover: #616161;
+  --color-btn-warning: #ff9800;
+  --color-btn-warning-hover: #e68900;
 
   /* 特殊セクション */
   --color-auth-bg: #0d47a1;

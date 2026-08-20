@@ -42,13 +42,13 @@
         <button v-if="selectedEntry.password" @click="fillSingleField('********')" class="field-item">
           パスワード: ••••••••
         </button>
-        <button 
-          v-for="(field, index) in selectedEntry.additionalFields" 
+        <button
+          v-for="(field, index) in selectedEntry.additionalFields"
           :key="index"
-          @click="fillSingleField(field.value)" 
+          @click="fillSingleField(field.value)"
           class="field-item"
         >
-          {{ field.name }}: {{ field.value }}
+          {{ field.name }}: {{ field.sensitive ? '••••••••' : field.value }}
         </button>
       </div>
       <button @click="backToEntrySelection" class="btn btn-secondary">戻る</button>

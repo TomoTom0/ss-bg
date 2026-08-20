@@ -10,18 +10,47 @@ export interface UrlMatchScore {
 }
 
 /**
+ * URL文字列をパースする。
+ * オプションページから保存されたURLは normalizeUrl() によりプロトコルなし
+ * （例: example.com/login）のため、http/https URLと解釈できない場合は
+ * https:// を補って再試行する。
+ * ※ new URL('example.com:8080/x') は protocol='example.com:' としてパース成功するため、
+ * プロトコルの検証も行う。
+ */
+function parseUrlOrNull(url: string): URL | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed;
+    }
+  } catch {
+    // https:// 補完で再試行
+  }
+  try {
+    const fallback = new URL(`https://${url}`);
+    if (fallback.protocol === 'https:') {
+      return fallback;
+    }
+  } catch {
+    // どちらも失敗
+  }
+  return null;
+}
+
+/**
  * URLマッチングスコアを計算
  */
 export function calculateUrlMatchScore(currentUrl: string, entry: PasswordEntry): number {
   try {
     const current = new URL(currentUrl);
     let maxScore = 0;
-    
+
     for (const entryUrl of entry.urls) {
       try {
-        const target = new URL(entryUrl);
+        const target = parseUrlOrNull(entryUrl);
+        if (!target) continue;
         let score = 0;
-        
+
         // 完全一致
         if (current.href === target.href) {
           score = 1000;
@@ -79,7 +108,7 @@ export function sortEntriesByUrl(currentUrl: string, entries: PasswordEntry[]): 
     entry,
     score: calculateUrlMatchScore(currentUrl, entry)
   }));
-  
+
   // スコアの高い順にソート、同点の場合はタイトルのアルファベット順
   scored.sort((a, b) => {
     if (b.score !== a.score) {
@@ -87,6 +116,49 @@ export function sortEntriesByUrl(currentUrl: string, entries: PasswordEntry[]): 
     }
     return a.entry.title.localeCompare(b.entry.title);
   });
-  
+
   return scored.map(s => s.entry);
+}
+
+/**
+ * 自動入力ダイアログ向けのランキング閾値（ドメイン一致以上を「このサイト」とする）
+ */
+export const URL_MATCH_HIGHLIGHT_THRESHOLD = 800;
+
+/**
+ * 最終使用を「最近」とする window（ミリ秒、24時間）
+ */
+export const RECENT_USE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * エントリが最近使用されたか（現在時刻を外部から渡すことでテスト可能）
+ */
+export function isRecentlyUsed(entry: PasswordEntry, now: number, windowMs = RECENT_USE_WINDOW_MS): boolean {
+  return typeof entry.lastUsedAt === 'number' && now - entry.lastUsedAt <= windowMs;
+}
+
+/**
+ * 自動入力ダイアログ用のランキング。
+ * 並び順: URL一致スコア(降順) → lastUsedAt(降順) → タイトル(昇順)。
+ * スコア0（不一致）のエントリも末尾に含む。
+ */
+export function rankEntriesForDialog(currentUrl: string, entries: PasswordEntry[]): PasswordEntry[] {
+  const ranked = entries.map(entry => ({
+    entry,
+    score: calculateUrlMatchScore(currentUrl, entry)
+  }));
+
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    const aUsed = a.entry.lastUsedAt ?? 0;
+    const bUsed = b.entry.lastUsedAt ?? 0;
+    if (bUsed !== aUsed) {
+      return bUsed - aUsed;
+    }
+    return a.entry.title.localeCompare(b.entry.title);
+  });
+
+  return ranked.map(r => r.entry);
 }

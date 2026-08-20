@@ -252,4 +252,76 @@ describe('Popup App', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('機密フィールドのマスク表示', () => {
+    it('機密追加フィールドはマスク表示され、非機密は実値のまま', async () => {
+      mockSendMessage.mockResolvedValue({
+        success: true,
+        data: { authenticated: true, expiresAt: Date.now() + 30000 }
+      });
+
+      const wrapper = mount(App);
+      await wrapper.vm.$nextTick();
+      await new Promise(r => setTimeout(r, 10));
+
+      // フィールド選択状態を直接セット
+      wrapper.vm.selectedEntry = {
+        id: '1',
+        title: 'テスト',
+        username: 'u',
+        password: 'p',
+        urls: ['https://example.com'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        additionalFields: [
+          { name: 'メモ', value: 'plain-value' },
+          { name: 'PIN', value: '1234', sensitive: true }
+        ]
+      };
+      wrapper.vm.autofillMode = 'select-field';
+      await wrapper.vm.$nextTick();
+
+      const text = wrapper.text();
+      expect(text).toContain('plain-value'); // 非機密は実値
+      expect(text).not.toContain('1234');    // 機密はマスク
+      expect(text).toContain('••••••••');
+    });
+
+    it('機密フィールドをクリックしても実値で入力される', async () => {
+      const fillSpy = vi.fn();
+      mockSendMessage.mockResolvedValue({
+        success: true,
+        data: { authenticated: true, expiresAt: Date.now() + 30000 }
+      });
+
+      const wrapper = mount(App);
+      await wrapper.vm.$nextTick();
+      await new Promise(r => setTimeout(r, 10));
+
+      wrapper.vm.selectedEntry = {
+        id: '1',
+        title: 'テスト',
+        username: 'u',
+        password: 'p',
+        urls: ['https://example.com'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        additionalFields: [{ name: 'PIN', value: '1234', sensitive: true }]
+      };
+      wrapper.vm.autofillMode = 'select-field';
+      wrapper.vm.autofillTabId = 1;
+      await wrapper.vm.$nextTick();
+
+      // FILL_FIELD を横取りするため chrome.tabs.sendMessage をモック
+      (global.chrome as any).tabs = { sendMessage: fillSpy };
+
+      const fieldButton = wrapper.findAll('.field-item').find(b => b.text().includes('PIN'));
+      await fieldButton?.trigger('click');
+
+      // fillSingleField(field.value) で実値が渡されること
+      expect(fillSpy).toHaveBeenCalled();
+      const payload = fillSpy.mock.calls[0][1];
+      expect(payload.payload.value).toBe('1234');
+    });
+  });
 });

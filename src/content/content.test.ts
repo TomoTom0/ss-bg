@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initialize, getLastFocusedInput, getDialogStylesForTest } from './content';
+import { initialize, getLastFocusedInput, getDialogStylesForTest, createAdditionalFieldRowForTest, markEntryUsed, suggestAddingCurrentUrl, getConfirmDialogButtonsForTest } from './content';
+import { normalizeUrl } from '@/utils/url-matcher';
+import type { PasswordEntry } from '@/types/storage';
 
 // chrome APIのモック
 const mockSendMessage = vi.fn();
@@ -308,6 +310,137 @@ describe('content script', () => {
       // 注入されるCSSでCSS変数が定義されていることを確認
       expect(styles).toContain('--color-text-primary:');
       expect(styles).toContain('--color-dialog-text:');
+    });
+  });
+
+  describe('追加フィールド行の機密扱い', () => {
+    it('機密フィールドの値入力は type=password になる', () => {
+      const { inputs } = createAdditionalFieldRowForTest('PIN', '1234', '', true);
+      expect(inputs.valueInput.type).toBe('password');
+      expect(inputs.valueInput.value).toBe('1234');
+    });
+
+    it('非機密フィールドの値入力は type=text でピークボタンが非表示', () => {
+      const { row, inputs } = createAdditionalFieldRowForTest('メモ', 'plain', '', false);
+      expect(inputs.valueInput.type).toBe('text');
+      const peekBtn = row.querySelector('.ss-bg-peek-btn') as HTMLElement;
+      expect(peekBtn.style.display).toBe('none');
+    });
+
+    it('ピークボタンで値を表示し、再度クリックでマスクに戻る', async () => {
+      const { row, inputs } = createAdditionalFieldRowForTest('PIN', '1234', '', true);
+      const peekBtn = row.querySelector('.ss-bg-peek-btn') as HTMLButtonElement;
+      expect(inputs.valueInput.type).toBe('password');
+
+      peekBtn.click();
+      expect(inputs.valueInput.type).toBe('text');
+      expect(peekBtn.getAttribute('aria-label')).toBe('隠す');
+
+      peekBtn.click();
+      expect(inputs.valueInput.type).toBe('password');
+      expect(peekBtn.getAttribute('aria-label')).toBe('表示');
+    });
+
+    it('機密チェックを外すと type=text になりピークボタンが隠れる', () => {
+      const { row, inputs } = createAdditionalFieldRowForTest('PIN', '1234', '', true);
+      inputs.sensitiveInput.checked = false;
+      inputs.sensitiveInput.dispatchEvent(new Event('change'));
+
+      expect(inputs.valueInput.type).toBe('text');
+      const peekBtn = row.querySelector('.ss-bg-peek-btn') as HTMLElement;
+      expect(peekBtn.style.display).toBe('none');
+    });
+
+    it('ピーク表示は5分後に自動でマスクへ戻る', () => {
+      vi.useFakeTimers();
+      try {
+        const { row, inputs } = createAdditionalFieldRowForTest('PIN', '1234', '', true);
+        const peekBtn = row.querySelector('.ss-bg-peek-btn') as HTMLButtonElement;
+        peekBtn.click();
+        expect(inputs.valueInput.type).toBe('text');
+
+        vi.advanceTimersByTime(5 * 60 * 1000);
+
+        expect(inputs.valueInput.type).toBe('password');
+        expect(peekBtn.getAttribute('aria-label')).toBe('表示');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('markEntryUsed', () => {
+    it('UPDATE_PASSWORD を送信し lastUsedAt を付与する', () => {
+      mockSendMessage.mockClear();
+      const entry = { id: 'abc', title: 'T', username: 'u', password: 'p', urls: [], createdAt: 1, updatedAt: 2 } as any;
+      markEntryUsed(entry);
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const msg = mockSendMessage.mock.calls[0][0];
+      expect(msg.type).toBe('UPDATE_PASSWORD');
+      expect(msg.payload.id).toBe('abc');
+      expect(typeof msg.payload.entry.lastUsedAt).toBe('number');
+      // updatedAt は維持
+      expect(msg.payload.entry.updatedAt).toBe(2);
+    });
+  });
+
+  describe('suggestAddingCurrentUrl', () => {
+    const baseEntry: PasswordEntry = {
+      id: 'abc',
+      title: 'T',
+      username: 'u',
+      password: 'p',
+      urls: ['other.example.com'],
+      createdAt: 1,
+      updatedAt: 2
+    };
+
+    it('承認すると現在URLを含む更新エントリを返す（markEntryUsedに渡して追加URLを保持できる）', async () => {
+      mockSendMessage.mockClear();
+      mockSendMessage.mockResolvedValue({ success: true });
+
+      const promise = suggestAddingCurrentUrl(baseEntry);
+      await vi.waitFor(() => {
+        expect(getConfirmDialogButtonsForTest().ok).not.toBeNull();
+      });
+      getConfirmDialogButtonsForTest().ok?.click();
+
+      const updated = await promise;
+      const expectedUrl = normalizeUrl(window.location.href);
+      expect(updated).not.toBeNull();
+      expect(updated?.urls).toContain(expectedUrl);
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      const msg = mockSendMessage.mock.calls[0][0];
+      expect(msg.type).toBe('UPDATE_PASSWORD');
+      expect(msg.payload.entry.urls).toContain(expectedUrl);
+    });
+
+    it('キャンセルすると null を返し保存しない', async () => {
+      mockSendMessage.mockClear();
+
+      const promise = suggestAddingCurrentUrl(baseEntry);
+      await vi.waitFor(() => {
+        expect(getConfirmDialogButtonsForTest().cancel).not.toBeNull();
+      });
+      getConfirmDialogButtonsForTest().cancel?.click();
+
+      const updated = await promise;
+      expect(updated).toBeNull();
+      expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('現在URLが既に登録済みの場合はプロンプトを出さず null を返す', async () => {
+      mockSendMessage.mockClear();
+      const registered: PasswordEntry = {
+        ...baseEntry,
+        urls: [normalizeUrl(window.location.href)]
+      };
+
+      const updated = await suggestAddingCurrentUrl(registered);
+
+      expect(updated).toBeNull();
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(getConfirmDialogButtonsForTest().ok).toBeNull();
     });
   });
 });

@@ -10,6 +10,7 @@ export interface PasswordEntry {
   notes?: string;          // メモ（オプション）
   createdAt: number;       // Unix timestamp (ms)
   updatedAt: number;       // Unix timestamp (ms)
+  lastUsedAt?: number;     // 最終使用日時（自動入力時に更新。Unix timestamp ms）
   
   // フィールドセレクタ情報
   usernameSelector?: string;
@@ -20,6 +21,7 @@ export interface PasswordEntry {
     name: string;          // フィールド名（例: "メールアドレス", "電話番号"）
     value: string;         // 値
     selector?: string;     // CSSセレクタ
+    sensitive?: boolean;   // 機密フィールド（マスク表示対象）
   }>;
 }
 
