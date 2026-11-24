@@ -525,6 +525,53 @@ function getDialogStyles(): string {
       border-color: var(--color-favorite-border);
       color: var(--color-favorite-border);
     }
+    .ss-bg-favorite-slot {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .ss-bg-favorite-delete {
+      width: 16px;
+      height: 28px;
+      padding: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      color: var(--color-text-tertiary);
+    }
+    .ss-bg-favorite-delete:hover {
+      color: var(--color-btn-danger);
+    }
+    .ss-bg-favorite-delete-message {
+      font-size: 11px;
+      color: var(--color-favorite-text);
+      align-self: center;
+    }
+    .ss-bg-favorite-delete-confirm {
+      height: 28px;
+      padding: 0 8px;
+      background: var(--color-btn-danger);
+      border: 1px solid var(--color-btn-danger);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--color-text-primary);
+    }
+    .ss-bg-favorite-delete-confirm:hover {
+      background: var(--color-btn-danger-hover);
+    }
+    .ss-bg-favorite-delete-cancel {
+      height: 28px;
+      padding: 0 8px;
+      background: none;
+      border: 1px solid var(--color-border-medium);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--color-text-primary);
+    }
     .ss-bg-favorite-label {
       font-size: 11px;
       color: var(--color-text-tertiary);
@@ -829,16 +876,21 @@ async function createFavoriteBar(): Promise<HTMLDivElement> {
 
   for (let i = 1; i <= 3; i++) {
     const slot = i as 1 | 2 | 3;
+    const isRegistered = registeredSlots.includes(slot);
+
+    const slotContainer = document.createElement('span');
+    slotContainer.className = 'ss-bg-favorite-slot';
+
     const star = document.createElement('button');
     star.className = 'ss-bg-favorite-star';
-    if (registeredSlots.includes(slot)) {
+    if (isRegistered) {
       star.classList.add('registered');
     }
     if (favoriteRegisterSlot === slot) {
       star.classList.add('active');
     }
     star.textContent = `${slot}`;
-    star.title = registeredSlots.includes(slot)
+    star.title = isRegistered
       ? `お気に入り ${slot} (登録済み) - クリックで登録モード切替`
       : `お気に入り ${slot} - クリックで登録モード`;
 
@@ -858,10 +910,86 @@ async function createFavoriteBar(): Promise<HTMLDivElement> {
       updateFavoriteIndicator();
     });
 
-    bar.appendChild(star);
+    slotContainer.appendChild(star);
+
+    // 登録済みスロットには削除ボタンを付ける
+    if (isRegistered) {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'ss-bg-favorite-delete';
+      deleteBtn.textContent = '×';
+      deleteBtn.title = `お気に入り ${slot} を削除`;
+      deleteBtn.setAttribute('aria-label', `お気に入り ${slot} を削除`);
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showFavoriteDeleteConfirm(bar, slot);
+      });
+      slotContainer.appendChild(deleteBtn);
+    }
+
+    bar.appendChild(slotContainer);
   }
 
   return bar;
+}
+
+/**
+ * お気に入りバーを最新の状態で作り直す
+ */
+async function refreshFavoriteBar(bar: HTMLDivElement): Promise<void> {
+  const newBar = await createFavoriteBar();
+  bar.replaceWith(newBar);
+}
+
+/**
+ * お気に入り削除の確認をバー内にインライン表示する
+ */
+function showFavoriteDeleteConfirm(bar: HTMLDivElement, slot: 1 | 2 | 3): void {
+  bar.innerHTML = '';
+
+  const message = document.createElement('span');
+  message.className = 'ss-bg-favorite-delete-message';
+  message.textContent = `お気に入り ${slot} を削除しますか？`;
+  bar.appendChild(message);
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'ss-bg-favorite-delete-confirm';
+  confirmBtn.textContent = '削除';
+  confirmBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteFavoriteAction(slot);
+    if (favoriteRegisterSlot === slot) {
+      favoriteRegisterSlot = null;
+    }
+    await refreshFavoriteBar(bar);
+    // インジケーターを更新
+    updateFavoriteIndicator();
+  });
+  bar.appendChild(confirmBtn);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'ss-bg-favorite-delete-cancel';
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await refreshFavoriteBar(bar);
+  });
+  bar.appendChild(cancelBtn);
+}
+
+/**
+ * お気に入り動作を削除
+ */
+async function deleteFavoriteAction(slot: 1 | 2 | 3): Promise<boolean> {
+  const domain = window.location.hostname;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'DELETE_FAVORITE',
+      payload: { domain, slot }
+    });
+    return response.success;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -2448,6 +2576,13 @@ export function getConfirmDialogButtonsForTest(): { ok: HTMLButtonElement | null
  */
 export function getDialogStylesForTest(): string {
   return getDialogStyles();
+}
+
+/**
+ * お気に入りバーを作成（テスト用エクスポート）
+ */
+export async function createFavoriteBarForTest(): Promise<HTMLDivElement> {
+  return createFavoriteBar();
 }
 
 /**

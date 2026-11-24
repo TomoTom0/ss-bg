@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initialize, getLastFocusedInput, getDialogStylesForTest, createAdditionalFieldRowForTest, markEntryUsed, suggestAddingCurrentUrl, getConfirmDialogButtonsForTest } from './content';
+import { initialize, getLastFocusedInput, getDialogStylesForTest, createAdditionalFieldRowForTest, createFavoriteBarForTest, markEntryUsed, suggestAddingCurrentUrl, getConfirmDialogButtonsForTest } from './content';
 import { normalizeUrl } from '@/utils/url-matcher';
 import type { PasswordEntry } from '@/types/storage';
 
@@ -440,6 +440,97 @@ describe('content script', () => {
       expect(updated).toBeNull();
       expect(mockSendMessage).not.toHaveBeenCalled();
       expect(getConfirmDialogButtonsForTest().ok).toBeNull();
+    });
+  });
+
+  describe('お気に入りバー', () => {
+    interface FavoriteStub {
+      slot: number;
+      domain: string;
+      entryId: string;
+      mappings: unknown[];
+      createdAt: number;
+    }
+
+    let favorites: FavoriteStub[];
+
+    beforeEach(() => {
+      favorites = [
+        { slot: 1, domain: window.location.hostname, entryId: 'entry-1', mappings: [], createdAt: 1 }
+      ];
+      mockSendMessage.mockImplementation(async (message: { type: string; payload?: { domain?: string; slot?: number } }) => {
+        if (message.type === 'GET_FAVORITES') {
+          return { success: true, data: favorites.filter(f => f.domain === message.payload?.domain) };
+        }
+        if (message.type === 'DELETE_FAVORITE') {
+          favorites = favorites.filter(f => !(f.domain === message.payload?.domain && f.slot === message.payload?.slot));
+          return { success: true };
+        }
+        return { success: true };
+      });
+    });
+
+    function deleteFavoriteCalls(): Array<{ type: string; payload?: { domain?: string; slot?: number } }> {
+      return mockSendMessage.mock.calls
+        .map(call => call[0] as { type: string; payload?: { domain?: string; slot?: number } })
+        .filter(m => m.type === 'DELETE_FAVORITE');
+    }
+
+    it('登録済みスロットにだけ削除ボタンが表示される', async () => {
+      const bar = await createFavoriteBarForTest();
+      container.appendChild(bar);
+
+      const stars = bar.querySelectorAll('.ss-bg-favorite-star');
+      expect(stars).toHaveLength(3);
+      expect(stars[0].classList.contains('registered')).toBe(true);
+      expect(stars[1].classList.contains('registered')).toBe(false);
+      expect(stars[2].classList.contains('registered')).toBe(false);
+
+      const deleteButtons = bar.querySelectorAll('.ss-bg-favorite-delete');
+      expect(deleteButtons).toHaveLength(1);
+      expect(deleteButtons[0].getAttribute('title')).toBe('お気に入り 1 を削除');
+    });
+
+    it('削除をキャンセルすると DELETE_FAVORITE は送信されずバーが元に戻る', async () => {
+      const bar = await createFavoriteBarForTest();
+      container.appendChild(bar);
+
+      (bar.querySelector('.ss-bg-favorite-delete') as HTMLButtonElement).click();
+
+      const message = bar.querySelector('.ss-bg-favorite-delete-message');
+      expect(message?.textContent).toBe('お気に入り 1 を削除しますか？');
+      expect(bar.querySelector('.ss-bg-favorite-delete-confirm')).not.toBeNull();
+
+      (bar.querySelector('.ss-bg-favorite-delete-cancel') as HTMLButtonElement).click();
+
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll('.ss-bg-favorite-star')).toHaveLength(3);
+      });
+      expect(deleteFavoriteCalls()).toHaveLength(0);
+      // 登録済みの表示も維持される
+      expect(container.querySelectorAll('.ss-bg-favorite-delete')).toHaveLength(1);
+    });
+
+    it('削除を確認すると DELETE_FAVORITE が送信されバーが再描画される', async () => {
+      const bar = await createFavoriteBarForTest();
+      container.appendChild(bar);
+
+      (bar.querySelector('.ss-bg-favorite-delete') as HTMLButtonElement).click();
+      (bar.querySelector('.ss-bg-favorite-delete-confirm') as HTMLButtonElement).click();
+
+      // 確認表示中は星も削除ボタンも消えるため、再描画後の状態で待つ
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll('.ss-bg-favorite-star')).toHaveLength(3);
+        expect(container.querySelectorAll('.ss-bg-favorite-delete')).toHaveLength(0);
+      });
+
+      const calls = deleteFavoriteCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].payload).toEqual({ domain: window.location.hostname, slot: 1 });
+
+      const stars = container.querySelectorAll('.ss-bg-favorite-star');
+      expect(stars).toHaveLength(3);
+      expect(stars[0].classList.contains('registered')).toBe(false);
     });
   });
 });
