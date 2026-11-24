@@ -91,6 +91,16 @@ bg-ssは、Windows Hello（生体認証・PIN）を使用した安全なテキ�
 
 - `Ctrl+Shift+S`: 現在のタブのスクリーンショットを撮影してダウンロード
 
+### キーボードショートカット
+
+既定の割り当ては以下のとおりです（`chrome://extensions/shortcuts` で変更できます）。
+
+- `Ctrl+Shift+S`: スクリーンショットを撮影
+- `Ctrl+Shift+F`: フォームに情報を入力（自動入力）
+- `Ctrl+Shift+1`: お気に入り 1 を実行
+- `Ctrl+Shift+2`: お気に入り 2 を実行
+- お気に入り 3: 既定の割り当てなし（Chrome の仕様で既定ショートカットは最大4つのため、`chrome://extensions/shortcuts` で手動で設定してください）
+
 ## 開発
 
 ### スクリプト
