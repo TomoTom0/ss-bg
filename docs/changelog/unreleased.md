@@ -6,7 +6,7 @@
 
 ## Bug Fixes
 
-（変更内容をここに記載）
+- キーボードショートカットが動作しない問題を修正: manifest の commands に既定ショートカット（suggested_key）が未定義で、全コマンドが未割り当てだった。`Ctrl+Shift+S`（スクリーンショット、README 記載の従来案内どおり）、`Ctrl+Shift+F`（自動入力）、`Ctrl+Shift+1` / `Ctrl+Shift+2`（お気に入り 1 / 2）を既定として追加。Chrome の仕様で既定ショートカットは最大4つのため、お気に入り 3 は `chrome://extensions/shortcuts` での手動設定とする
 
 ## Changes
 

@@ -46,17 +46,31 @@ export default defineManifest({
     '128': 'icons/icon128.png'
   },
 
+  // Chrome の仕様で suggested_key を指定できるのは最大4つまで。
+  // favorite-3 は chrome://extensions/shortcuts で手動設定する。
   commands: {
     'take-screenshot': {
+      suggested_key: {
+        default: 'Ctrl+Shift+S'
+      },
       description: 'スクリーンショットを撮影'
     },
     'autofill-forms': {
+      suggested_key: {
+        default: 'Ctrl+Shift+F'
+      },
       description: 'フォームに情報を入力'
     },
     'favorite-1': {
+      suggested_key: {
+        default: 'Ctrl+Shift+1'
+      },
       description: 'お気に入り 1 を実行'
     },
     'favorite-2': {
+      suggested_key: {
+        default: 'Ctrl+Shift+2'
+      },
       description: 'お気に入り 2 を実行'
     },
     'favorite-3': {
