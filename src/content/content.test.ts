@@ -214,19 +214,18 @@ describe('content script', () => {
   });
 
   describe('動的フォーム対応', () => {
-    it('後から追加された入力フィールドにも対応できる', (done) => {
+    it('後から追加された入力フィールドにも対応できる', async () => {
       initialize();
 
-      setTimeout(() => {
-        const dynamicInput = document.createElement('input');
-        dynamicInput.type = 'text';
-        container.appendChild(dynamicInput);
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-        dynamicInput.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      const dynamicInput = document.createElement('input');
+      dynamicInput.type = 'text';
+      container.appendChild(dynamicInput);
 
-        expect(dynamicInput).toBeTruthy();
-        done();
-      }, 100);
+      dynamicInput.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+
+      expect(dynamicInput).toBeTruthy();
     });
 
     it('削除された要素のハイライトはクリーンアップされる', () => {
