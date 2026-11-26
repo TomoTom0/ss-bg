@@ -13,7 +13,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        // crxjs は manifest から参照されるページしかビルドしないため、
+        // offscreen ページ（クリップボードコピー用）を明示的にビルド対象へ追加する
+        offscreen: resolve(__dirname, './src/offscreen/index.html')
+      }
+    }
   },
   test: {
     globals: true,

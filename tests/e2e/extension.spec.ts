@@ -39,6 +39,21 @@ test.describe('Build Verification', () => {
     expect(html).toContain('<!DOCTYPE html>');
   });
 
+  test('offscreen HTMLが生成されている', () => {
+    const offscreenPath = path.join(EXTENSION_PATH, 'src/offscreen/index.html');
+    expect(fs.existsSync(offscreenPath)).toBe(true);
+
+    const html = fs.readFileSync(offscreenPath, 'utf-8');
+    expect(html).toContain('<!DOCTYPE html>');
+
+    // HTML が参照する JS アセットも生成されていること
+    // （HTML だけ存在してアセットが無いと offscreen 文書は動作しない）
+    const scriptSrc = html.match(/<script[^>]+src="([^"]+)"/)?.[1];
+    expect(scriptSrc).toBeTruthy();
+    const assetPath = path.join(EXTENSION_PATH, scriptSrc!.replace(/^\//, ''));
+    expect(fs.existsSync(assetPath)).toBe(true);
+  });
+
   test('アイコンファイルが存在する', () => {
     expect(fs.existsSync(path.join(EXTENSION_PATH, 'icons/icon16.png'))).toBe(true);
     expect(fs.existsSync(path.join(EXTENSION_PATH, 'icons/icon48.png'))).toBe(true);

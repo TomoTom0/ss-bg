@@ -681,6 +681,10 @@ async function showPasswordDialog(candidates: PasswordEntry[], tabId: number): P
     const firstInput = document.querySelector('input[type="password"], input[type="text"], input[type="email"]') as HTMLInputElement;
     if (!firstInput) return;
     lastFocusedInput = firstInput;
+  } else {
+    // content script の注入前にフォーカスされていたフィールドでも、
+    // 後続の入力処理が対象を特定できるよう保持する
+    lastFocusedInput = targetInput;
   }
 
   const rect = (lastFocusedInput || targetInput).getBoundingClientRect();
@@ -1265,8 +1269,12 @@ function showFieldSelectionDialog(entry: PasswordEntry, tabId: number): void {
   
   // すべて入力ボタン
   const allBtn = createFieldButton('すべて入力 (ユーザー名 + パスワード)', async () => {
+    const hostBeforeFill = dialogShadowHost;
     await handleFillPassword(entry);
-    closeDialog();
+    // 入力処理がエラーダイアログ等へ表示を切り替えた場合は、そのダイアログを閉じない
+    if (dialogShadowHost === hostBeforeFill) {
+      closeDialog();
+    }
   });
   
   // ホバー時にフィールドをハイライト
@@ -1879,7 +1887,12 @@ export function markEntryUsed(entry: PasswordEntry): void {
   });
 }
 
-async function handleFillPassword(entry: PasswordEntry): Promise<void> {
+export async function handleFillPassword(entry: PasswordEntry): Promise<void> {
+  // 注入前にフォーカスされたフィールドは focusin で追跡できていないため、
+  // 現在フォーカス中のフィールドへフォールバックする（handleFillField と同じ扱い）
+  if (!lastFocusedInput) {
+    lastFocusedInput = getFocusedInput();
+  }
   const form = lastFocusedInput?.closest('form');
   if (!form) {
     await showErrorDialog('対象のフォームを特定できませんでした。入力したいフォーム内のフィールドを一度クリックしてから再度お試しください。');
