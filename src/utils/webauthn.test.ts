@@ -207,7 +207,7 @@ describe('webauthn utilities', () => {
 
     it('PRF結果が取得できない場合はエラーを投げる', async () => {
       // PRF有効状態に設定
-      await storage.saveSettings({ prfEnabled: true } as any);
+      await storage.saveSettings({ prfEnabled: true });
 
       const mockAssertion = {
         ...createMockAssertion(),
@@ -243,7 +243,7 @@ describe('webauthn utilities', () => {
     });
 
     it('既存ボールトがある場合はPRFを試さず署名ベースで認証する', async () => {
-      await storage.saveSettings({ prfEnabled: false } as any);
+      await storage.saveSettings({ prfEnabled: false });
       // 既存ボールト（署名ベースの鍵で暗号化済み）がある状態を再現
       (global.chrome.storage.local.set as any)({
         encryptedPasswords: JSON.stringify({ iv: 'aXY=', data: 'ZGF0YQ==', algorithm: 'AES-GCM', version: 1 })
@@ -261,6 +261,16 @@ describe('webauthn utilities', () => {
       expect(call.publicKey.extensions).toBeUndefined();
       const settings = await storage.getSettings();
       expect(settings.prfEnabled).toBe(false);
+    });
+
+    it('ボールト未作成でPRF試行がキャンセルされた場合はフォールバックせず伝播する', async () => {
+      // PRF 評価不能（PrfEvaluationError）以外のエラーは署名ベースへ
+      // フォールバックせず、そのまま伝播することを固定する
+      vi.mocked(navigator.credentials.get).mockResolvedValue(null);
+
+      await expect(authenticate()).rejects.toThrow('Authentication was cancelled');
+      // 署名ベースへの再試行は行われない
+      expect(navigator.credentials.get).toHaveBeenCalledTimes(1);
     });
 
     it('ボールト未作成でPRF評価に失敗した場合は署名ベースへフォールバックする', async () => {

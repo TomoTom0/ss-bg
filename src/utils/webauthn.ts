@@ -1,6 +1,17 @@
 import { storage } from './storage';
 import type { Session } from '@/types/session';
 
+/**
+ * PRF 評価ができなかったことを示すエラー。
+ * 認証時のフォールバック判定はこの型で行う（メッセージ文字列の一致に依存しない）。
+ */
+export class PrfEvaluationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PrfEvaluationError';
+  }
+}
+
 const RP_NAME = 'bg-ss';
 const APP_SALT = new Uint8Array(32).fill(0x55); // 固定salt（アプリケーション固有）
 const HKDF_SALT = new Uint8Array(32).fill(0xAA); // HKDF用salt
@@ -114,7 +125,7 @@ export async function authenticate(): Promise<{ key: CryptoKey; credentialId: Ar
       await storage.saveSettings({ prfEnabled: true });
       return result;
     } catch (error) {
-      if (!(error instanceof Error) || error.message !== 'PRF evaluation failed') {
+      if (!(error instanceof PrfEvaluationError)) {
         // キャンセル等のエラーはそのまま伝播する
         throw error;
       }
@@ -157,7 +168,7 @@ async function authenticateWithPRF(credentialId: ArrayBuffer): Promise<{ key: Cr
   
   const prfResult = assertion.getClientExtensionResults().prf;
   if (!prfResult?.results?.first) {
-    throw new Error('PRF evaluation failed');
+    throw new PrfEvaluationError('PRF evaluation failed');
   }
   
   const prfOutput = new Uint8Array(prfResult.results.first);

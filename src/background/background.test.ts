@@ -370,6 +370,21 @@ describe('background service worker', () => {
       expect(chrome.downloads.download).not.toHaveBeenCalled();
       errorSpy.mockRestore();
     });
+
+    it('コピーもダウンロードも無効な場合はエラーを返す', async () => {
+      vi.mocked(chrome.tabs.query).mockResolvedValue([{ id: 1, windowId: 2 }] as any);
+      vi.mocked(chrome.tabs.captureVisibleTab).mockResolvedValue('data:image/png;base64,AAAA');
+      vi.mocked(chrome.storage.local.get).mockResolvedValue({
+        settings: { screenshotCopyToClipboard: false, screenshotDownloadImage: false }
+      });
+
+      const message: Message = { type: 'TAKE_SCREENSHOT' };
+      const response = await handleMessage(message);
+
+      expect(response.success).toBe(false);
+      expect(response.error).toBeDefined();
+      expect(chrome.downloads.download).not.toHaveBeenCalled();
+    });
   });
 
   describe('不明なメッセージタイプ', () => {

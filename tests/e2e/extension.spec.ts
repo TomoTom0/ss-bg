@@ -45,6 +45,13 @@ test.describe('Build Verification', () => {
 
     const html = fs.readFileSync(offscreenPath, 'utf-8');
     expect(html).toContain('<!DOCTYPE html>');
+
+    // HTML が参照する JS アセットも生成されていること
+    // （HTML だけ存在してアセットが無いと offscreen 文書は動作しない）
+    const scriptSrc = html.match(/<script[^>]+src="([^"]+)"/)?.[1];
+    expect(scriptSrc).toBeTruthy();
+    const assetPath = path.join(EXTENSION_PATH, scriptSrc!.replace(/^\//, ''));
+    expect(fs.existsSync(assetPath)).toBe(true);
   });
 
   test('アイコンファイルが存在する', () => {

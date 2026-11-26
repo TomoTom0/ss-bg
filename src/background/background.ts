@@ -540,6 +540,11 @@ async function handleTakeScreenshot(): Promise<Response> {
 
     const settings = await storage.getSettings();
 
+    if (!settings.screenshotCopyToClipboard && !settings.screenshotDownloadImage) {
+      // 出力先が両方とも無効な場合、何も出力せずに成功を返すことはしない
+      return { success: false, error: 'No screenshot output is enabled in settings' };
+    }
+
     let clipboardError: unknown = null;
     if (settings.screenshotCopyToClipboard) {
       try {
