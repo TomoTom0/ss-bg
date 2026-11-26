@@ -225,6 +225,60 @@ describe('webauthn utilities', () => {
       await expect(authenticate()).rejects.toThrow();
     });
 
+    it('prfEnabled=falseでもボールト未作成ならPRFを試し、成功すればprfEnabledを保存する', async () => {
+      // settings 未保存（prfEnabled=false 相当）かつボールト未作成の状態
+      const mockAssertion = createMockAssertion();
+      vi.mocked(navigator.credentials.get).mockResolvedValue(mockAssertion);
+
+      const result = await authenticate();
+
+      expect(result.key).toBeInstanceOf(CryptoKey);
+      const settings = await storage.getSettings();
+      expect(settings.prfEnabled).toBe(true);
+      // PRF 由来の鍵であること
+      const expectedKey = await deriveEncryptionKey(new Uint8Array(mockPrfOutput));
+      const exported = await crypto.subtle.exportKey('raw', result.key);
+      const expectedExported = await crypto.subtle.exportKey('raw', expectedKey);
+      expect(new Uint8Array(exported)).toEqual(new Uint8Array(expectedExported));
+    });
+
+    it('既存ボールトがある場合はPRFを試さず署名ベースで認証する', async () => {
+      await storage.saveSettings({ prfEnabled: false } as any);
+      // 既存ボールト（署名ベースの鍵で暗号化済み）がある状態を再現
+      (global.chrome.storage.local.set as any)({
+        encryptedPasswords: JSON.stringify({ iv: 'aXY=', data: 'ZGF0YQ==', algorithm: 'AES-GCM', version: 1 })
+      });
+
+      const mockAssertion = createMockAssertion();
+      vi.mocked(navigator.credentials.get).mockResolvedValue(mockAssertion);
+
+      const result = await authenticate();
+
+      expect(result.key).toBeInstanceOf(CryptoKey);
+      // PRF 拡張なしで1回だけ認証している（署名ベース経路）
+      expect(navigator.credentials.get).toHaveBeenCalledTimes(1);
+      const call = vi.mocked(navigator.credentials.get).mock.calls[0][0] as any;
+      expect(call.publicKey.extensions).toBeUndefined();
+      const settings = await storage.getSettings();
+      expect(settings.prfEnabled).toBe(false);
+    });
+
+    it('ボールト未作成でPRF評価に失敗した場合は署名ベースへフォールバックする', async () => {
+      const mockAssertionNoPrf = {
+        ...createMockAssertion(),
+        getClientExtensionResults: () => ({ prf: undefined })
+      } as unknown as PublicKeyCredential;
+      vi.mocked(navigator.credentials.get).mockResolvedValue(mockAssertionNoPrf);
+
+      const result = await authenticate();
+
+      expect(result.key).toBeInstanceOf(CryptoKey);
+      // PRF 試行 + 署名ベースの2回認証が走る
+      expect(navigator.credentials.get).toHaveBeenCalledTimes(2);
+      const settings = await storage.getSettings();
+      expect(settings.prfEnabled).toBe(false);
+    });
+
     it('同じcredentialで認証すると同じ鍵が導出される', async () => {
       const mockAssertion = createMockAssertion();
       vi.mocked(navigator.credentials.get).mockResolvedValue(mockAssertion);

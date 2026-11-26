@@ -99,10 +99,31 @@ export async function authenticate(): Promise<{ key: CryptoKey; credentialId: Ar
   if (prfEnabled) {
     // PRF対応の場合
     return await authenticateWithPRF(credentialId);
-  } else {
-    // PRF未対応の場合、署名ベースで鍵を導出
-    return await authenticateWithSignature(credentialId);
   }
+
+  // 登録時の getClientExtensionResults().prf.enabled が得られなかっただけで、
+  // 実際には PRF が使える場合がある（Chrome + Windows Hello で、作成済み
+  // credential への get では prf.results.first が返ることを実測）。
+  // ただし既存のボールトは署名ベースの鍵で暗号化されているため、ここで
+  // 鍵を切り替えると復号できなくなる。ボールトがまだ存在しない場合に限り
+  // PRF 評価を試し、成功したら prfEnabled を保存して PRF を採用する。
+  const encryptedPasswords = await storage.getEncryptedPasswords();
+  if (!encryptedPasswords) {
+    try {
+      const result = await authenticateWithPRF(credentialId);
+      await storage.saveSettings({ prfEnabled: true });
+      return result;
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'PRF evaluation failed') {
+        // キャンセル等のエラーはそのまま伝播する
+        throw error;
+      }
+      // PRF 評価ができない場合は署名ベースへフォールバックする
+    }
+  }
+
+  // PRF未対応の場合、署名ベースで鍵を導出
+  return await authenticateWithSignature(credentialId);
 }
 
 /**

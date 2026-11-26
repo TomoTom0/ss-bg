@@ -541,7 +541,12 @@ async function handleTakeScreenshot(): Promise<Response> {
     const settings = await storage.getSettings();
 
     if (settings.screenshotCopyToClipboard) {
-      await copyToClipboard(dataUrl);
+      try {
+        await copyToClipboard(dataUrl);
+      } catch (clipboardError) {
+        // クリップボードコピーの失敗でスクリーンショット全体を失敗にしない
+        console.error('Failed to copy screenshot to clipboard:', clipboardError);
+      }
     }
 
     if (settings.screenshotDownloadImage) {
