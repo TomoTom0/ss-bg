@@ -540,12 +540,15 @@ async function handleTakeScreenshot(): Promise<Response> {
 
     const settings = await storage.getSettings();
 
+    let clipboardError: unknown = null;
     if (settings.screenshotCopyToClipboard) {
       try {
         await copyToClipboard(dataUrl);
-      } catch (clipboardError) {
-        // クリップボードコピーの失敗でスクリーンショット全体を失敗にしない
-        console.error('Failed to copy screenshot to clipboard:', clipboardError);
+      } catch (error) {
+        // ダウンロードが有効な場合は、クリップボードコピーの失敗で
+        // スクリーンショット全体を失敗にしない（ダウンロードで出力が残るため）
+        clipboardError = error;
+        console.error('Failed to copy screenshot to clipboard:', error);
       }
     }
 
@@ -557,6 +560,12 @@ async function handleTakeScreenshot(): Promise<Response> {
         filename,
         saveAs: false
       });
+    } else if (clipboardError) {
+      // ダウンロードも無効だと出力が何も残らないため、コピー失敗を伝播する
+      return {
+        success: false,
+        error: clipboardError instanceof Error ? clipboardError.message : 'Failed to copy screenshot to clipboard'
+      };
     }
 
     return { success: true };

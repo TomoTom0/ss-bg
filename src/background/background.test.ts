@@ -351,6 +351,25 @@ describe('background service worker', () => {
       expect(chrome.downloads.download).toHaveBeenCalledTimes(1);
       errorSpy.mockRestore();
     });
+
+    it('クリップボードコピー失敗かつダウンロード無効時はエラーを返す', async () => {
+      vi.mocked(chrome.tabs.query).mockResolvedValue([{ id: 1, windowId: 2 }] as any);
+      vi.mocked(chrome.tabs.captureVisibleTab).mockResolvedValue('data:image/png;base64,AAAA');
+      vi.mocked(chrome.storage.local.get).mockResolvedValue({
+        settings: { screenshotCopyToClipboard: true, screenshotDownloadImage: false }
+      });
+      (chrome.runtime as any).getContexts = vi.fn().mockResolvedValue([]);
+      vi.mocked(chrome.offscreen.createDocument).mockRejectedValue(new Error('Page failed to load.'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const message: Message = { type: 'TAKE_SCREENSHOT' };
+      const response = await handleMessage(message);
+
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Page failed to load.');
+      expect(chrome.downloads.download).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
   });
 
   describe('不明なメッセージタイプ', () => {
