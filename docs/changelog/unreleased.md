@@ -42,7 +42,10 @@
 
 ## Repository Management
 
-（変更内容をここに記載）
+- 利用者向け Usage を新規作成（docs/usage/）
+  - usage_getting-started.md（概要・必要要件・初回設定・Popup）、usage_options.md（Options の4タブと保存済み情報の管理）、usage_autofill-screenshot.md（自動入力・フォーム保存・お気に入り・スクリーンショット・ショートカット）、索引 README.md
+  - Options 各タブ（General / Auth 未認証 / Screenshot / Others）と Popup（未認証）を実機相当の Chromium で撮影し WebP 化して埋め込み（docs/usage/images/）
+  - Windows Hello の認証ダイアログ等、撮影環境（Linux）で表示できない画面は捏造せず、未撮影の理由を各トピックと store-listing の「Usage 画像一覧」に明記
 
 ## Internal Improvements
 

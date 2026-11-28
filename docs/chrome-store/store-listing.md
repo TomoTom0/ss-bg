@@ -147,3 +147,25 @@ Chrome Web Storeの審査用に、各権限が必要な理由を説明します�
 **目的**: オフスクリーン処理（認証等）
 
 **説明**: Windows Hello認証を安全に行うために、オフスクリーンドキュメントを使用します。
+
+---
+
+## Usage 画像一覧
+
+利用者向け Usage（docs/usage/）に掲載しているスクリーンショットの一覧。撮影は 2026-11-28、ビルド済み拡張（dist/）を Chromium に読み込んで実施した。
+
+| ファイル | 画面 | 掲載先 |
+|---|---|---|
+| docs/usage/images/getting-started/popup-unauthenticated.webp | Popup（未認証・初期設定前） | usage_getting-started.md |
+| docs/usage/images/options/options-general.webp | 設定 General タブ（テーマ設定・セッションタイムアウト） | usage_options.md |
+| docs/usage/images/options/options-auth-unauthenticated.webp | 設定 Auth タブ（未認証） | usage_options.md |
+| docs/usage/images/options/options-screenshot.webp | 設定 Screenshot タブ | usage_options.md |
+| docs/usage/images/options/options-others.webp | 設定 Others タブ（キーボードショートカット・開発用機能） | usage_options.md |
+
+### 未撮影の画面
+
+| 画面 | 理由 |
+|---|---|
+| Windows Hello の認証ダイアログ（PIN・指紋・顔認証） | Windows Hello は Windows 実機でのみ動作し、撮影環境（Linux 上の Chromium）では表示できない |
+| Popup の認証済み状態、Auth タブの認証済み状態（保存済み情報の一覧・追加 / 編集フォーム）、セッションロック確認 | 認証済みセッションが前提で、上記の認証を撮影環境で完了できないため |
+| コンテキストメニュー、自動入力の候補 / フィールド選択ダイアログ、お気に入りバー | 認証済みセッションが前提で、同上 |
